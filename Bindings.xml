@@ -1,0 +1,30 @@
+<Bindings>
+  <Binding name="OCTOBG_TARGET_EFC" header="OCTOBG">OctoBG_TargetEFC();</Binding>
+  <Binding name="OCTOBG_SPELL_EFC">OctoBG_SpellEFC();</Binding>
+  <Binding name="OCTOBG_TARGET_FFC">OctoBG_TargetFFC();</Binding>
+  <Binding name="OCTOBG_INTERACT">OctoBG_Interact();</Binding>
+  <Binding name="OCTOBG_INC_AUTO">OctoBG_Inc("auto");</Binding>
+  <Binding name="OCTOBG_INC_1">OctoBG_Inc("1");</Binding>
+  <Binding name="OCTOBG_INC_2">OctoBG_Inc("2");</Binding>
+  <Binding name="OCTOBG_INC_3">OctoBG_Inc("3");</Binding>
+  <Binding name="OCTOBG_INC_4">OctoBG_Inc("4");</Binding>
+  <Binding name="OCTOBG_INC_5">OctoBG_Inc("5+");</Binding>
+  <Binding name="OCTOBG_SAFE">OctoBG_Safe();</Binding>
+  <Binding name="OCTOBG_HUD">OctoBG_ToggleHUD();</Binding>
+  <Binding name="OCTOBG_CDBARS">OctoBG_ToggleCDBars();</Binding>
+  <Binding name="OCTOBG_OPTIONS">OctoBG_Options();</Binding>
+  <Binding name="OCTOBG_FOCUS_SET">OctoBG_FocusSet();</Binding>
+  <Binding name="OCTOBG_FOCUS_TARGET">OctoBG_FocusTarget();</Binding>
+  <Binding name="OCTOBG_FOCUS_MOUSE">OctoBG_FocusMouseover();</Binding>
+  <Binding name="OCTOBG_FOCUS_SWAP">OctoBG_FocusSwap();</Binding>
+  <Binding name="OCTOBG_FOCUS_1">OctoBG_FocusSpell(1);</Binding>
+  <Binding name="OCTOBG_FOCUS_2">OctoBG_FocusSpell(2);</Binding>
+  <Binding name="OCTOBG_FOCUS_3">OctoBG_FocusSpell(3);</Binding>
+  <Binding name="OCTOBG_MAP">OctoBG_ToggleMap();</Binding>
+  <Binding name="OCTOBG_LIST">OctoBG_ToggleList();</Binding>
+  <Binding name="OCTOBG_WORLD">OctoBG_ToggleWorld();</Binding>
+  <Binding name="OCTOBG_STATS">OctoBG_ToggleStats();</Binding>
+  <Binding name="OCTOBG_KOS">OctoBG_KOSTarget();</Binding>
+  <Binding name="OCTOBG_IGNORE">OctoBG_IgnoreTarget();</Binding>
+  <Binding name="OCTOBG_NEARBY">OctoBG_PostNearby();</Binding>
+</Bindings>

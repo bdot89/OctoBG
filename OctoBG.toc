@@ -1,0 +1,41 @@
+## Interface: 11200
+## Title: |cff33ccffOcto|rBG
+## Notes: All-in-one PvP addon with Spy and EnemyCooldowns built in (combat text moved to pfUI Octo): enemy map, world PvP detection (Nearby list, Kill On Sight, alerts, statistics), battleground enemy roster with casts and cooldowns, flag carriers, cap and resurrection timers, INC calls, radar HUD, focus casting, team sync, stealth alerts and marks, enemy cooldown bars, nameplate cooldowns, diminishing returns. /obg
+## Author: bdot1 (world PvP: Spy by Immolation / laytya / me0wg4ming; enemy cooldowns: Nivhalla's EnemyCooldowns - merged)
+## Version: 2.2.1
+## SavedVariables: OctoBGDB
+## OptionalDeps: EnemyCooldowns, Spy, Rangecheck, SuperAPI, NampowerSettings
+
+core\Core.lua
+core\Util.lua
+core\Map.lua
+core\Tracker.lua
+core\Widgets.lua
+core\Layout.lua
+data\Spells.lua
+data\Resets.lua
+data\DR.lua
+data\SpyData.lua
+data\MapOverlays.lua
+modules\Cooldowns.lua
+modules\CDBars.lua
+modules\CDPlates.lua
+modules\Retarget.lua
+modules\Flags.lua
+modules\Timers.lua
+modules\Casts.lua
+modules\Focus.lua
+modules\People.lua
+modules\Nearby.lua
+modules\Roster.lua
+modules\Stats.lua
+modules\Sync.lua
+modules\Incoming.lua
+modules\HUD.lua
+modules\TacMap.lua
+modules\SCTLink.lua
+modules\Threat.lua
+modules\Interact.lua
+modules\Minimap.lua
+modules\Options.lua
+modules\ThreatOptions.lua

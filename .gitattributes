@@ -1,0 +1,10 @@
+# Left out of the release zip (git archive): developer files
+/tests export-ignore
+/tools export-ignore
+/CLAUDE.md export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+
+*.tga binary
+*.ttf binary
+*.wav binary
