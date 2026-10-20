@@ -98,7 +98,10 @@ end)
 -- ---------------------------------------------------------------- commands
 
 local function OpenPfUI()
-  if pfUI and pfUI.gui and pfUI.gui.frames and pfUI.gui.frames["Combat Text"] then
+  local O = pfUI and pfUI.octoui and pfUI.octoui.Options
+  if O and O.Open and O.frame then
+    O:Open("ctgeneral")
+  elseif pfUI and pfUI.gui and pfUI.gui.frames and pfUI.gui.frames["Combat Text"] then
     pfUI.gui:Show()
     pfUI.gui.frames["Combat Text"]:Click()
   else
