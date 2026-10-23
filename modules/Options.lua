@@ -132,7 +132,7 @@ local function Active() B:RefreshActive() end
 -- every setting has a tooltip that says what you will see, in everyday words.
 
 local BUILD = {}
--- Pages of other files (ThreatOptions.lua) use the same builders and helpers.
+-- Pages in other files can use the same builders and helpers.
 O.BUILD = BUILD
 O.Chk, O.Sld, O.Drop, O.On = Chk, Sld, Drop, On
 O.Pct, O.Px, O.Sec, O.Yd = Pct, Px, Sec, Yd
@@ -156,7 +156,6 @@ BUILD.start = function(p)
   Chk(p, "Stealth marks", "A purple circle on the radar and map where a rogue vanished.", S, "enabled")
   Chk(p, "Cooldown bars", "Bars under your target showing which big spells they used and when they are ready again.", C, "bars")
   Chk(p, "Nameplate cooldowns", "Small spell icons above every enemy's nameplate showing what they used.", C, "nameplates")
-  Chk(p, "Threat label", "Dungeons and raids: how close you are to pulling the mob off the tank.", function() return B.db.threat end, "enabled")
   Chk(p, "Keep target", "If a hunter feigns death and you lose your target, OctoBG targets them again.", function() return B.db.retarget end, "enabled")
   Chk(p, "Focus strip", "A small bar under your focus showing their cooldowns and range.", function() return B.db.focus end, "strip")
   W.Card(p, "First steps", { text = "Put the panels where you want them. You only need to do this once." })
@@ -1109,7 +1108,7 @@ end
 
 -- ---------------------------------------------------------------- window
 
--- The topic list. Threat label (ThreatOptions.lua) goes in under Setup; combat text moved to pfUI Octo.
+-- The topic list. Combat text and threat moved to pfUI Octo.
 O.SECTIONS = {
   { "start", "Overview" },
   { nil, "Battlegrounds" },
@@ -1139,8 +1138,7 @@ O.SECTIONS = {
 }
 
 -- Pages that were merged into others (O:Open of an old key still works).
-O.ALIAS = { detect = "world", retarget = "focus", plates = "cdbars", profile = "cdtrack",
-            ctthreat = "threat" }
+O.ALIAS = { detect = "world", retarget = "focus", plates = "cdbars", profile = "cdtrack" }
 
 -- One topic: a flat row; the picked one gets a blue wash and a blue edge.
 local function NavButton(nav, label, indent)

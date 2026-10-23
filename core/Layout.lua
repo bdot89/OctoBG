@@ -60,8 +60,6 @@ L.INFO = {
                return B.db.cd.alpha
              end },
   focus = { page = "focus", on = function() return B.db.focus.strip end, set = function(v) B.db.focus.strip = v end },
-  -- the Threat box is used only when the label is set to "A box I place"
-  threat = { page = "threat", on = function() return B.db.threat.enabled and B.db.threat.where == "screen" end },
 }
 
 local function Info(f) return L.INFO[f.key] or {} end

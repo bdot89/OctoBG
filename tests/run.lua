@@ -40,7 +40,7 @@ SpyPerCharDB = {
 }
 
 local files = Mock.Load(DIR, "OctoBG.toc")
-ok(table.getn(files) == 33, "33 files in the toc (got " .. table.getn(files) .. ")")
+ok(table.getn(files) == 31, "31 files in the toc (got " .. table.getn(files) .. ")")
 local B = OctoBG
 
 Mock.Fire("ADDON_LOADED", "OctoBG")
@@ -191,8 +191,6 @@ Mock.target = oldTarget
 -- old page names open the page they were merged into
 O:Open("detect")
 ok(O.current == "world", "detect opens Detection")
-O:Open("ctthreat")
-ok(O.current == "threat", "the old threat page name opens Threat label")
 -- folding cards: shut, open, remembered, reset
 local mp = O:Page("map")
 ok(table.getn(mp.cards) == 3, "enemy map page has three cards")
@@ -235,10 +233,10 @@ O.quickFind:SetText("")
 ok(not O.searching and O.pages[O.current].frame:IsShown(), "emptying the box goes back to the page")
 O:ResetCards()
 ok(next(B.db.optCards) == nil and B.W.IsOpen(c1), "Reset folded cards")
--- the threat label page sits under Setup now
-O:Select("threat")
+-- threat and combat text pages moved to pfUI Octo
+O:Select("general")
 O:Refresh()
-ok(O.pages.threat and not O.pages.ctareas, "Threat label page, no combat text pages")
+ok(not O.pages.threat and not O.pages.ctareas, "no threat or combat text pages")
 
 O.frame:Hide()
 
@@ -586,13 +584,11 @@ NB:MoveBox(false)
 
 -- ---------------------------------------------------------------- combat text: moved to pfUI Octo
 -- (19 Oct 2026, pfUI\modules\sct*.lua; its tests moved too, pfUI\tests\sct.lua).
--- OctoBG keeps the link: nameplates for the threat label, sounds, alerts sent on.
+-- OctoBG keeps the link: sounds, alerts sent on.
 local ME = "0x0000000000000001"
 local FOE = "0x00000000000000C1"
 Mock.Enemy(FOE, "Punchbag", "WARRIOR", 15, 0)
-local plate = Mock.Plate(FOE)
-ok(B.SCT and B.SCT.Plate and B.SCT.Notify and B.SCT.PlaySound, "link to pfUI's combat text")
-ok(B.SCT:Plate(FOE) == plate, "nameplate lookup kept (threat label)")
+ok(B.SCT and B.SCT.Notify and B.SCT.PlaySound and not B.SCT.Plate, "link to pfUI's combat text")
 ok(B.SCT.Notify and pcall(B.SCT.Notify, B.SCT, "obgCd", "Blind ready"), "alerts without pfUI: no error")
 local soundsBefore = table.getn(Mock.sounds)
 B.SCT.PlaySound("RaidWarning")
@@ -658,76 +654,20 @@ ok(B.Map:DescribeWSG((tun[1] + tun[3]) / 2, (tun[2] + tun[4]) / 2) == "Alliance 
 B.zone = zoneWas
 B.U.SetLocked(true)
 
--- a party member, for the threat test below
-local MATE = "0x00000000000000F1"
-local mate = Mock.Enemy(MATE, "Buddy", "PALADIN", 5, 5, { faction = "Horde" })
-Mock.units.party1 = mate
-Mock.party = 1
-Mock.Fire("PARTY_MEMBERS_CHANGED")
-
--- ---------------------------------------------------------------- threat on the target's nameplate
-local TH = B.Threat
-local MOB = "0xF130003F1A000001"
-Mock.Enemy(MOB, "Ogre", "WARRIOR", 8, 0, { npc = true, combat = true })
-local mobPlate = Mock.Plate(MOB)
-Mock.target = MOB
-Mock.Fire("PLAYER_TARGET_CHANGED")
+-- ---------------------------------------------------------------- threat: moved to pfUI Octo
+-- (23 Oct 2026, pfUI\modules\meters-threat.lua; its tests moved too, pfUI\tests\run.lua).
 local sentBefore = table.getn(Mock.sent)
 Mock.Tick(0.6)
 local asked = false
 for i = sentBefore + 1, table.getn(Mock.sent) do
-  if Mock.sent[i][1] == "TWT_UDTSv4" and Mock.sent[i][3] == "PARTY" then asked = true end
+  if Mock.sent[i][1] == "TWT_UDTSv4" then asked = true end
 end
-ok(asked, "asks the server for threat in a party fight")
-Mock.Fire("CHAT_MSG_ADDON", "TWT", "TWTv4=Tankguy:1:5000:100:1;Tester:0:4600:92:1;Mage:0:3000:60:0", "PARTY", "Tankguy")
-local lt = TH.label.text.text or ""
-ok(TH.label:IsShown() and string.find(lt, "Threat 92%", 1, true), "threat under the target's plate (" .. lt .. ")")
-ok(TH.label.point and TH.label.point[2] == mobPlate, "anchored to that plate")
-ok(string.find(lt, "ff4a3a", 1, true), "red past the cap (92 % of the tank, cap 90 %)")
-ok(OctoBGAlert and OctoBGAlert:IsShown() and string.find(OctoBGAlert.text.text or "", "back off", 1, true), "popup when passing the cap")
--- the cap against the top two: 4600 of the mage's 3000 is past it; 70 % of the tank is past it too
-B.db.threat.ref = 2
-TH:Draw()
-ok(string.find(TH.label.text.text or "", "153%", 1, true), "share of the 2nd highest (" .. tostring(TH.label.text.text) .. ")")
-B.db.threat.ref, B.db.threat.limit = 1, 95
-TH:Draw()
-ok(string.find(TH.label.text.text or "", "ffd23a", 1, true), "yellow near the cap (92 of 95)")
-B.db.threat.look = "number"
-TH:Draw()
-ok(TH.label.text.text and not string.find(TH.label.text.text, "Threat", 1, true) and string.find(TH.label.text.text, "92%", 1, true), "just the number")
-B.db.threat.look = "bar"
-TH:Draw()
-ok(TH.label.bar:IsShown() and TH.label.bar.w > 0, "bar look")
-B.db.threat.look, B.db.threat.where = "words", "below"
-TH:Draw()
-ok(TH.label.point and TH.label.point[1] == "TOP" and TH.label.point[3] == "BOTTOM", "below the plate")
-B.db.threat.where = "screen"
-TH:Draw()
-ok(TH.label.point and TH.label.point[2] == TH.box, "in its own box")
-B.db.threat.where, B.db.threat.limit = "above", 90
-SlashCmdList["OCTOBG"]("threat 70 2")
-ok(B.db.threat.limit == 70 and B.db.threat.ref == 2, "/obg threat 70 2 sets the cap")
-B.db.threat.limit, B.db.threat.ref = 90, 1
-Mock.Fire("CHAT_MSG_ADDON", "TWT", "TWTv4=Tester:1:6000:100:1;Rogue:0:5900:98:1#TMTv1=Ogre:0xF1:Rogue:98", "PARTY", "x")
-lt = TH.label.text.text or ""
-ok(string.find(lt, "Aggro", 1, true) and string.find(lt, "next 98%", 1, true), "aggro with the next player (" .. lt .. ")")
-ok(table.getn(TH.Parse("TWTv4=A:1:1:100:1;B:0:2:50:0#TMTv1=x:y:z:1")) == 2, "tank-mode tail skipped")
-Mock.Tick(2.5)
-ok(not TH.label:IsShown(), "label goes when the answers stop")
-TH:Sample(3)
-ok(TH.label:IsShown() and string.find(TH.label.text.text or "", "Threat 72%", 1, true), "sample label")
-Mock.Tick(3.2)
-TH.answers, TH.silent, TH.gaveUp, TH.lastPacket = 0, 0, false, 0
-for i = 1, 25 do Mock.Tick(0.5) end
-ok(TH.gaveUp, "stops asking a server that never answers")
-ok(string.find(TH:Status(), "no threat data", 1, true), "and says so")
+ok(not B.Threat and not asked, "OctoBG no longer asks for threat")
+ok(not (B.Layout.INFO.threat), "no threat box in Move frames")
+local printedBefore = table.getn(Mock.printed)
 SlashCmdList["OCTOBG"]("threat")
-B:Fire("OBG_ZONE", B.zone, B.zone)
-ok(not TH.gaveUp, "asks again after a zone change")
-Mock.target = nil
-Mock.Fire("PLAYER_TARGET_CHANGED")
-Mock.party = 0
-Mock.units.party1 = nil
+local said = table.concat(Mock.printed, "\n", printedBefore + 1)
+ok(string.find(said, "pfUI Octo", 1, true), "/obg threat points to pfUI Octo without pfUI")
 
 -- ---------------------------------------------------------------- keep target: rogues, Hunter's Mark
 local RT = B.Retarget

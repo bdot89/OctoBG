@@ -1,5 +1,15 @@
 # OctoBG - notes for Claude Code
 
+## Threat moved out to pfUI Octo (23 Oct 2026, v2.3.0)
+- User (screenshot of pfUI's basic Threat page): "bring the threat section over here and add to it
+  ... Remove anything to do with threat tracking from OBG". modules/Threat.lua and ThreatOptions.lua
+  are GONE; the label, cap, looks, places, popups and TWThreat protocol live in
+  pfUI\modules\meters-threat.lua (page "mtthreat", /pfthreat), which copies OctoBGDB.threat once
+  (left in the saved file for that). Also removed: Features tick box, Layout INFO "threat" box,
+  O.ALIAS ctthreat, B.SCT:Plate / PlateGuid (only the label used them). `/obg threat [args]` passes
+  to /pfthreat or opens pfUI's page (SCTLink.lua). Sections below about threat describe pfUI's code now.
+- Tests: 220 checks.
+
 ## Combat text moved out to pfUI Octo (19 Oct 2026, v2.2.0)
 - User (screenshot of OctoBG's options): "the menu should be in PFUI totally moved over out of OBG".
   modules/SCT.lua, SCTEvents.lua, SCTOptions.lua are GONE from OctoBG; the engine lives on in

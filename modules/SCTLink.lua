@@ -6,12 +6,13 @@
 -- needs is here, as B.SCT so the callers did not change:
 --   B.SCT:Notify(key, text, r, g, b)  OctoBG's alerts (enemy cooldowns, Kill
 --                                     On Sight, stealth) as pfUI combat text
---   B.SCT:Plate(guid)                 a unit's nameplate (the threat label)
 --   B.SCT.PlaySound(key), .SOUNDS     sounds (pfUI's list when pfUI runs)
 --   /sct, /obg sct                    open pfUI's Combat Text options
+-- Threat moved the same way on 23 Oct 2026 (pfUI\modules\meters-threat.lua,
+-- settings copied once from OctoBGDB.threat): /obg threat opens its page.
 
 local B = OctoBG
-local CT = { plateOf = {}, plateScanAt = 0 }
+local CT = {}
 B.SCT = CT
 
 local function PfUI()
@@ -26,40 +27,6 @@ end
 function CT:Clear()
   local P = PfUI()
   if P then P:Clear() end
-end
-
--- ---------------------------------------------------------------- nameplates
-
--- GUID -> nameplate: ClassicAPI's lookup, else the plates' nampower GUIDs
--- (frame:GetName(1)), rebuilt at most every 0.25 s
-function CT:PlateGuid(f)
-  local ok, g = pcall(f.GetName, f, 1)
-  if ok and type(g) == "string" and string.sub(g, 1, 2) == "0x" then return g end
-  return nil
-end
-
-function CT:Plate(guid)
-  if not guid then return nil end
-  if C_NamePlate and C_NamePlate.GetNamePlateForGUID then
-    local ok, p = pcall(C_NamePlate.GetNamePlateForGUID, guid)
-    if ok and p and p.IsVisible and p:IsVisible() then return p end
-  end
-  local p = self.plateOf[guid]
-  if p and p:IsVisible() and self:PlateGuid(p) == guid then return p end
-  local now = GetTime()
-  if now - self.plateScanAt < 0.25 then return nil end
-  self.plateScanAt = now
-  local map = {}
-  local kids = { WorldFrame:GetChildren() }
-  for i = 1, table.getn(kids) do
-    local k = kids[i]
-    if k:IsVisible() then
-      local g = self:PlateGuid(k)
-      if g then map[g] = k end
-    end
-  end
-  self.plateOf = map
-  return map[guid]
 end
 
 -- ---------------------------------------------------------------- sounds
@@ -115,6 +82,19 @@ B:Command("sct", "combat text - moved to pfUI Octo (/pfui, Combat Text)", functi
     SlashCmdList.PFUI("sct " .. rest)
   else
     OpenPfUI()
+  end
+end)
+
+-- threat label, cap and popups live in pfUI Octo's meters now
+B:Command("threat", "threat - moved to pfUI Octo (/pfthreat, Meters - Threat)", function(rest)
+  rest = rest or ""
+  local O = pfUI and pfUI.octoui and pfUI.octoui.Options
+  if rest ~= "" and SlashCmdList.PFTHREAT then
+    SlashCmdList.PFTHREAT(rest)
+  elseif O and O.Open and O.frame then
+    O:Open("mtthreat")
+  else
+    B:Print("threat lives in pfUI Octo now: /pfthreat, or /pfui - Meters - Threat")
   end
 end)
 

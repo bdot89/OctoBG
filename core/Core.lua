@@ -12,7 +12,7 @@
 OctoBG = {}
 local B = OctoBG
 
-B.VERSION = "2.2.1"
+B.VERSION = "2.3.0"
 B.env = { superwow = false, nampower = false, unitxp = false, safe = false }
 B.zone = nil        -- "WSG", "AB", "AV", "TG" (Thorn Gorge), "ARENA" or nil
 B.zoneName = nil
