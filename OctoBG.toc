@@ -2,7 +2,7 @@
 ## Title: |cff33ccffOcto|rBG
 ## Notes: All-in-one PvP addon with Spy and EnemyCooldowns built in (combat text and threat moved to pfUI Octo): enemy map, world PvP detection (Nearby list, Kill On Sight, alerts, statistics), battleground enemy roster with casts and cooldowns, flag carriers, cap and resurrection timers, INC calls, radar HUD, focus casting, team sync, stealth alerts and marks, enemy cooldown bars, nameplate cooldowns, diminishing returns. /obg
 ## Author: bdot1 (world PvP: Spy by Immolation / laytya / me0wg4ming; enemy cooldowns: Nivhalla's EnemyCooldowns - merged)
-## Version: 2.3.0
+## Version: 2.3.1
 ## SavedVariables: OctoBGDB
 ## OptionalDeps: EnemyCooldowns, Spy, Rangecheck, SuperAPI, NampowerSettings
 
@@ -35,5 +35,6 @@ modules\HUD.lua
 modules\TacMap.lua
 modules\SCTLink.lua
 modules\Interact.lua
+modules\BGTidy.lua
 modules\Minimap.lua
 modules\Options.lua

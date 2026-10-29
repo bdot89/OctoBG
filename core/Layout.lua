@@ -60,6 +60,11 @@ L.INFO = {
                return B.db.cd.alpha
              end },
   focus = { page = "focus", on = function() return B.db.focus.strip end, set = function(v) B.db.focus.strip = v end },
+  avbutton = { page = "tidy", on = function() return B.db.avmode.button end,
+               set = function(v)
+                 B.db.avmode.button = v
+                 if B.BGTidy then B.BGTidy:PaintButton() end
+               end },
 }
 
 local function Info(f) return L.INFO[f.key] or {} end

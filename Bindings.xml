@@ -3,6 +3,7 @@
   <Binding name="OCTOBG_SPELL_EFC">OctoBG_SpellEFC();</Binding>
   <Binding name="OCTOBG_TARGET_FFC">OctoBG_TargetFFC();</Binding>
   <Binding name="OCTOBG_INTERACT">OctoBG_Interact();</Binding>
+  <Binding name="OCTOBG_AVMODE">OctoBG_ToggleAVMode();</Binding>
   <Binding name="OCTOBG_INC_AUTO">OctoBG_Inc("auto");</Binding>
   <Binding name="OCTOBG_INC_1">OctoBG_Inc("1");</Binding>
   <Binding name="OCTOBG_INC_2">OctoBG_Inc("2");</Binding>

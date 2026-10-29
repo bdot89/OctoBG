@@ -234,6 +234,12 @@ BUILD.map = function(p)
   Chk(p, "Hover and click enemies", "Hover an enemy to see who it is, click to target them. Off: clicks go through the map to the game.", M, "mouse", MapLayout)
   Chk(p, "Enemy count under it", "A line under the map: how many enemies it shows and where the enemy flag carrier is.", M, "count")
   Drop(p, "Names", "Small names under the triangles: none, only your target and Kill On Sight, or everyone.", MAP_NAMES, M, "names")
+  W.Check(p, "Height bars", "Small white bars ABOVE a marker when that player is higher than you (a roof, a hill), "
+    .. "BELOW it when lower - one bar, two from double the distance, three from four times. Anywhere, for enemies, your "
+    .. "team and both flag carriers; the count line adds \"3 above, 2 below\". Only for players your own client sees.",
+    function() return (B.db.map.height or "on") ~= "off" end, function(v) B.db.map.height = v and "on" or "off" end)
+  Sld(p, "...from", "How much higher or lower before a bar shows - a few yards of slope never count.", 5, 30, 1, M,
+    "heightStep", nil, function(v) return v .. " yd" end)
   W.Space(p, 2)
   Chk(p, "Base circles", "Battlegrounds: a circle round every base (Arathi Basin nodes, Warsong Gulch flag rooms) with a "
     .. "label - \"ST 3 +2\" = 3 enemies there, 2 running in. Click the label to post \"3 AT STABLES\", right-click it to "
@@ -921,9 +927,35 @@ BUILD.interact = function(p)
     .. "3. Open |cffffd100dlls.txt|r in that folder and add a line: interact.dll\n"
     .. "4. Restart the game. The line above turns green.", 0, true)
 end
+BUILD.tidy = function(p)
+  local BT = B.BGTidy
+  local function TD() return B.db.tidy end
+  local function AV() return B.db.avmode end
+  W.Heading(p, "Clean screen", {
+    text = "Less clutter in battlegrounds: hide what OctoBG already shows, and a mode with nameplates for enemy players only.",
+    about = "Everything here goes back the moment you untick it." })
+  W.Card(p, "The game's score frame", { text = "The bases / flags / resources frame at the top of the screen in battlegrounds." })
+  Chk(p, "Hide it in battlegrounds", "OctoBG's flag and timer panels show the same (and more).", TD, "scoreFrame",
+    function() BT:ScoreFrame() end)
+  W.Card(p, "BigWigs' battleground timers", { text = "BigWigs draws its own Arathi Basin and Alterac Valley bars." })
+  Chk(p, "Hide BigWigs' timers while OctoBG's run", "In Arathi Basin and Alterac Valley, with the Timers panel on: "
+    .. "BigWigs' base / tower / start bars are left out (BigWigs itself is not changed).", TD, "bigwigs")
+  W.Live(p, function()
+    if not BigWigs then return "|cff888888BigWigs isn't loaded - nothing to hide.|r" end
+    return BT.bwDone and "|cff55ff55BigWigs found|r - its battleground bars follow this switch." or "BigWigs found; its battleground modules load when you enter one."
+  end)
+  W.Card(p, "AV mode", { text = "Nameplates for enemy PLAYERS only: no NPCs (guards, the hundreds of Alterac Valley mobs), no friendly plates." })
+  W.Check(p, "AV mode", "On: enemy player plates are switched on and everything else is hidden. Off: your nameplate "
+    .. "settings come back as they were (pfUI's too).", function() return B.db.avmode.on end, function(v) BT:SetAV(v) end)
+  Chk(p, "AV mode button on screen", "A small button to switch it - place it with Move frames at the top.", AV, "button",
+    function() BT:PaintButton() end)
+  W.KeyBind(p, "AV mode key", "A key that switches AV mode on and off.", "OCTOBG_AVMODE")
+  W.Note(p, "/obg avmode switches it too (/obg avmode on, /obg avmode off).")
+end
+
 -- ---------------------------------------------------------------- spell filter page
 
-local CLASSES = { "WARRIOR", "MAGE", "ROGUE", "PRIEST", "WARLOCK", "PALADIN", "SHAMAN", "DRUID", "HUNTER", "OTHERS" }
+local CLASSES ={ "WARRIOR", "MAGE", "ROGUE", "PRIEST", "WARLOCK", "PALADIN", "SHAMAN", "DRUID", "HUNTER", "OTHERS" }
 
 local function FilterPage(content)
   local D = B.CDData
@@ -1135,6 +1167,7 @@ O.SECTIONS = {
   { nil, "Setup" },
   { "general", "General" },
   { "interact", "Interact key" },
+  { "tidy", "Clean screen, AV mode" },
 }
 
 -- Pages that were merged into others (O:Open of an old key still works).

@@ -575,6 +575,20 @@ function M:DescribeWSG(x, y, z)
   return where
 end
 
+-- How far above / below you a player is, in steps for the enemy map's height
+-- bars: 0 within `step` yards (a few yards of slope never count), then 1 from
+-- step, 2 from 2 x step, 3 from 4 x step; negative = below you. nil when a
+-- height is missing (out of sight: map-only positions have none).
+function M.HeightTier(z, pz, step)
+  if not z or not pz then return nil end
+  step = step or 10
+  local d = z - pz
+  local a = math.abs(d)
+  if a < step then return 0 end
+  local t = (a >= 4 * step) and 3 or ((a >= 2 * step) and 2 or 1)
+  return (d < 0) and -t or t
+end
+
 -- Plain words for a world position on the current map.
 function M:Describe(x, y, z)
   if not x then return nil end

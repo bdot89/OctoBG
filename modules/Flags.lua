@@ -88,6 +88,25 @@ function F:SetCarrier(flag, name)
   self:Refresh()
 end
 
+-- Our side became known (or changed) mid-game: the EFC is whoever carries OUR
+-- flag, so every carrier is judged again and its unit / class looked up anew.
+B:On("OBG_TEAM", function()
+  for _, c in pairs(F.carriers) do
+    c.enemy = (c.faction ~= B.faction)
+    c.unit, c.guid = nil, nil
+    F:Resolve(c)
+  end
+  F:Refresh()
+end)
+
+-- The flag map tokens were learned before battlegrounds went cross-faction;
+-- a game played for the other side could have taught them backwards: learn once more.
+B:On("OBG_INIT", function()
+  if (B.db.flagTokensV or 0) < 2 then
+    B.db.flagTokens, B.db.flagTokensV = nil, 2
+  end
+end)
+
 function F:Dropped(flag)
   local c = self.carriers[flag]
   if c then

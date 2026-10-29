@@ -112,13 +112,21 @@ function T:Consider(guid)
   if r and GetTime() - r < 20 then return nil end
   if not U.GuidExists(guid) then return nil end
   if not UnitIsPlayer(guid) then Reject(guid) return nil end
-  -- Hostile reaction first; arenas can match same-faction players, so there
-  -- "can attack" counts too; the faction comparison is the last resort.
-  local enemy = UnitIsEnemy("player", guid)
-  if not enemy and B.zone == "ARENA" then enemy = UnitCanAttack("player", guid) end
-  if not enemy then
-    local tf = UnitFactionGroup(guid)
-    enemy = (tf ~= nil and B.faction ~= nil and tf ~= B.faction)
+  -- Battlegrounds are cross-faction: the raid is our team, the scoreboard says
+  -- everyone's side, and "can attack" decides the rest - never the faction.
+  -- Elsewhere: hostile reaction first; arenas can match same-faction players,
+  -- so there "can attack" counts too; the faction comparison is the last resort.
+  local enemy
+  if B:IsBG() then
+    local side = B:SideOf(guid)
+    if side then enemy = (side == "enemy") else enemy = UnitCanAttack("player", guid) and true or false end
+  else
+    enemy = UnitIsEnemy("player", guid)
+    if not enemy and B.zone == "ARENA" then enemy = UnitCanAttack("player", guid) end
+    if not enemy then
+      local tf = UnitFactionGroup(guid)
+      enemy = (tf ~= nil and B.faction ~= nil and tf ~= B.faction)
+    end
   end
   if not enemy then Reject(guid) return nil end
   -- real players always have a class (Spy's pet check)
@@ -533,6 +541,20 @@ B:On("OBG_ZONE", function()
   alertedAt, nalerted = {}, 0
   T.reachZone, T.reachIsBG, T.reach, T.drops = B.zoneName, B:IsBG(), 0, {}
   if B.test then T:SetSamples(true) end
+end)
+
+-- Our side or the raid changed (cross-faction battlegrounds): teammates leave
+-- the enemy list, and everyone rejected so far is looked at again.
+B:On("OBG_TEAM", function()
+  if not B:IsBG() then return end
+  for guid, u in pairs(T.units) do
+    if not u.fake and B:SideOf(guid, u.name) == "friend" then
+      T.units[guid] = nil
+      T.count = T.count - 1
+      if u.name and T.byName[u.name] == u then T.byName[u.name] = nil end
+    end
+  end
+  rejected, nrej = {}, 0
 end)
 
 -- Nameplates (nampower: frame:GetName(1) is the plate's GUID), the group's

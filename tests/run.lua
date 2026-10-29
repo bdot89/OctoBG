@@ -40,7 +40,7 @@ SpyPerCharDB = {
 }
 
 local files = Mock.Load(DIR, "OctoBG.toc")
-ok(table.getn(files) == 31, "31 files in the toc (got " .. table.getn(files) .. ")")
+ok(table.getn(files) == 32, "32 files in the toc (got " .. table.getn(files) .. ")")
 local B = OctoBG
 
 Mock.Fire("ADDON_LOADED", "OctoBG")
@@ -388,6 +388,104 @@ ok(B.zone == "WSG", "in Warsong Gulch")
 ok(R:Roster(), "roster mode")
 ok(table.getn(R.list) >= 3, "scoreboard enemies listed (" .. table.getn(R.list) .. ")")
 ok(B.TacMap.frame:IsShown(), "map shown in the battleground")
+
+-- cross-faction battlegrounds: an Alliance character in our (Horde) raid is a teammate
+local PAL = "0x00000000000000F7"
+local pal = Mock.Enemy(PAL, "Holybro", "PALADIN", 6, 4)          -- faction Alliance, like every mock enemy
+Mock.units.raid1, Mock.raid = pal, 1
+table.insert(Mock.scores, { "Holybro", 0, "Paladin" })           -- the scoreboard: playing for the Horde
+B.Tracker.units[PAL] = { guid = PAL, name = "Holybro", class = "PALADIN", seen = GetTime() }
+B.Tracker.count = B.Tracker.count + 1
+Mock.Fire("RAID_ROSTER_UPDATE")
+Mock.Fire("UPDATE_BATTLEFIELD_SCORE")
+ok(not B.Tracker.units[PAL], "cross-faction: an Alliance-race teammate leaves the enemy list")
+ok(not B.Tracker:Consider(PAL), "cross-faction: and is never taken for an enemy")
+ok(B.faction == "Horde", "our side from the scoreboard (Horde)")
+-- we are put on the Alliance side: the EFC is whoever carries the ALLIANCE flag
+for i = 1, table.getn(Mock.scores) do
+  if Mock.scores[i][1] == "Tester" then Mock.scores[i][2] = 1 end
+end
+Mock.Fire("UPDATE_BATTLEFIELD_SCORE")
+ok(B.faction == "Alliance" and B.enemy == "Horde", "cross-faction: playing for the Alliance")
+Mock.Fire("CHAT_MSG_BG_SYSTEM_HORDE", "The Alliance flag was picked up by Rogueone!")
+Mock.Fire("CHAT_MSG_BG_SYSTEM_ALLIANCE", "The Horde flag was picked up by Bueno!")
+ok(B.Flags:Enemy() and B.Flags:Enemy().name == "Rogueone", "EFC = the one carrying our flag (" .. tostring(B.Flags:Enemy() and B.Flags:Enemy().name) .. ")")
+ok(B.Flags:Friend() and B.Flags:Friend().name == "Bueno" and not B.Flags:Friend().enemy, "our carrier is not the EFC")
+-- the side turning mid-game re-judges the carriers
+for i = 1, table.getn(Mock.scores) do
+  if Mock.scores[i][1] == "Tester" then Mock.scores[i][2] = 0 end
+end
+Mock.Fire("UPDATE_BATTLEFIELD_SCORE")
+ok(B.Flags:Enemy() and B.Flags:Enemy().name == "Bueno" and B.Flags:Enemy().enemy, "side back to Horde: carriers judged again")
+Mock.Fire("CHAT_MSG_BG_SYSTEM_NEUTRAL", "The flags are now placed at their bases.")
+Mock.units.raid1, Mock.raid = nil, 0
+table.remove(Mock.scores)
+Mock.Fire("RAID_ROSTER_UPDATE")
+
+-- height bars: steps above / below you, stacked on the marker
+local HT = B.Map.HeightTier
+ok(HT(305, 300, 10) == 0 and HT(309, 300, 10) == 0, "a few yards of slope: no bar")
+ok(HT(312, 300, 10) == 1 and HT(325, 300, 10) == 2 and HT(345, 300, 10) == 3, "1 / 2 / 3 bars from 10 / 20 / 40 yd")
+ok(HT(285, 300, 10) == -1 and HT(250, 300, 10) == -3, "below: negative steps")
+ok(HT(nil, 300, 10) == nil, "no height: no bars")
+local fo = B.TacMap:Foe(1)
+B.TacMap:SetLevel(fo.lvl, 2)
+ok(fo.lvl.bars[1].bg:IsShown() and fo.lvl.bars[2].bg:IsShown() and not fo.lvl.bars[3].bg:IsShown(), "two bars")
+ok(fo.lvl.bars[1].bg.point[1] == "BOTTOM" and fo.lvl.bars[1].bg.point[2] == fo.tri, "higher: bars above the marker")
+B.TacMap:SetLevel(fo.lvl, -1)
+ok(fo.lvl.bars[1].bg.point[1] == "TOP" and not fo.lvl.bars[2].bg:IsShown(), "lower: one bar below the marker")
+B.TacMap:SetLevel(fo.lvl, 0)
+ok(not fo.lvl.bars[1].bg:IsShown(), "level with you: nothing")
+B.db.map.height = "off"
+ok(B.TacMap:FloorOf(0, 0, 400) == nil, "height bars off")
+B.db.map.height = "on"
+
+-- the game's score frame, BigWigs' battleground bars, AV mode
+local BT = B.BGTidy
+B.db.tidy.scoreFrame = true
+BT:ScoreFrame()
+WorldStateAlwaysUpFrame:Show()
+ok(not WorldStateAlwaysUpFrame:IsShown(), "score frame hidden in a battleground, and stays hidden")
+B.db.tidy.scoreFrame = false
+BT:ScoreFrame()
+ok(WorldStateAlwaysUpFrame:IsShown(), "unticked: the score frame is back")
+local bwBars = {}
+local bwMod = { Bar = function(self, text) table.insert(bwBars, text) end }
+BigWigs = { GetModule = function(self, name) if name == "Arathi Basin" then return bwMod end error("no module") end }
+BT.bwDone = nil
+BT:QuietBigWigs()
+local zoneWas = B.zone
+B.zone = "AB"
+bwMod:Bar("Stables")
+ok(table.getn(bwBars) == 0, "BigWigs' AB bar left out while our timers run")
+B.db.tidy.bigwigs = false
+bwMod:Bar("Farm")
+ok(bwBars[1] == "Farm", "switch off: BigWigs' bars again")
+B.db.tidy.bigwigs, B.zone, BigWigs = true, zoneWas, nil
+-- AV mode with pfUI's nameplates: its hide settings while on, yours back after
+pfUI = { nameplates = {} }
+pfUI_config = { nameplates = { enemynpc = "0", neutralnpc = "0", friendlynpc = "1", friendlyplayer = "0", enemyplayer = "0" } }
+SlashCmdList["OCTOBG"]("avmode on")
+local pn = pfUI_config.nameplates
+ok(B.db.avmode.on and pn.enemynpc == "1" and pn.neutralnpc == "1" and pn.friendlyplayer == "1" and pn.enemyplayer == "0",
+  "AV mode: pfUI hides every plate but enemy players")
+BT:ToggleAV()
+ok(not B.db.avmode.on and pn.enemynpc == "0" and pn.friendlynpc == "1" and pn.friendlyplayer == "0", "AV mode off: pfUI's settings as they were")
+pfUI, pfUI_config = nil, nil
+-- game nameplates: NPC plates go invisible, enemy player plates stay
+local border = Mock.New("Texture")
+border:SetTexture("Interface\\Tooltips\\Nameplate-Border")
+local npcPlate = Mock.Plate("0xF130001234000001")
+Mock.Enemy("0xF130001234000001", "Frostwolf Guardian", "WARRIOR", 3, 3, { npc = true })
+local foePlate = Mock.Plate("0x00000000000000A1")
+npcPlate.GetRegions = function() return border end
+foePlate.GetRegions = function() return border end
+OctoBG_ToggleAVMode()
+Mock.Tick(0.15)
+ok(npcPlate.alpha == 0 and foePlate.alpha ~= 0, "AV mode: NPC plate hidden, enemy player plate kept")
+OctoBG_ToggleAVMode()
+ok(npcPlate.alpha == 1, "AV mode off: the NPC plate is back")
+npcPlate.shown, foePlate.shown = false, false
 -- the position axes are measured against the map, and a wrong saved value corrected
 do
   local Mp = B.Map

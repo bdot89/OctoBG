@@ -404,16 +404,86 @@ function TM:CropOverlays(vx, vy, vw, vh, k)
   end
 end
 
--- One enemy marker: triangle / arrowhead, rings and a name.
+-- ---------------------------------------------------------------- height marks
+-- Up to three short white bars with a black rim, stacked ABOVE a marker when
+-- that player is higher than you and BELOW it when lower: one bar from
+-- db.map.heightStep yards (10), two from twice that, three from four times
+-- (M.HeightTier). No colour of their own (every colour is some class's) and
+-- no triangles (enemies are triangles): place and count say it. Within the
+-- step nothing is drawn, so a slope never counts and ten players on one roof
+-- are ten small bar stacks, not ten icons. Anchored to the marker, the bars
+-- move with it every frame. db.map.height "off" switches them off.
+local BAR_GAP = 3
+local function LevelMark(layer, owner, width)
+  local m = { owner = owner, bars = {} }
+  for i = 1, 3 do
+    local bg = U.Tex(layer, U.WHITE, "ARTWORK")      -- the black rim (ARTWORK under OVERLAY: a set order)
+    bg:SetVertexColor(0, 0, 0, 0.9)
+    bg:SetWidth(width + 2)
+    bg:SetHeight(4)
+    local fg = U.Tex(layer, U.WHITE, "OVERLAY")
+    fg:SetVertexColor(1, 1, 1, 1)
+    fg:SetWidth(width)
+    fg:SetHeight(2)
+    fg:SetPoint("CENTER", bg, "CENTER", 0, 0)
+    bg:Hide()
+    fg:Hide()
+    m.bars[i] = { bg = bg, fg = fg }
+  end
+  m.Hide = function(self)
+    for i = 1, 3 do
+      self.bars[i].bg:Hide()
+      self.bars[i].fg:Hide()
+    end
+  end
+  return m
+end
+
+-- The height step of a player at world height z (nil = no mark).
+function TM:FloorOf(x, y, z)
+  if (B.db.map.height or "on") == "off" or not z then return nil end
+  local _, _, pz = M:PlayerWorld()
+  return M.HeightTier(z, pz, B.db.map.heightStep or 10)
+end
+
+function TM:SetLevel(m, tier)
+  if not tier or tier == 0 then
+    m:Hide()
+    return
+  end
+  local n = math.abs(tier)
+  local up = tier > 0
+  for i = 1, 3 do
+    local b = m.bars[i]
+    if i <= n then
+      b.bg:ClearAllPoints()
+      if up then
+        b.bg:SetPoint("BOTTOM", m.owner, "TOP", 0, 1 + (i - 1) * BAR_GAP)
+      else
+        b.bg:SetPoint("TOP", m.owner, "BOTTOM", 0, -1 - (i - 1) * BAR_GAP)
+      end
+      b.bg:Show()
+      b.fg:Show()
+    else
+      b.bg:Hide()
+      b.fg:Hide()
+    end
+  end
+end
+
+-- One enemy marker: triangle / arrowhead, rings, a name and a height mark.
 function TM:Foe(i)
   local o = self.foes[i]
   if not o then
     o = {
       tri = Dot(self.foeLayer, U.MEDIA .. "tri", "ARTWORK", self.triS),
-      ring = Dot(self.topLayer, U.MEDIA .. "circle", "BORDER", self.triS * 1.5),
+      -- target / Kill On Sight: the same shape a little bigger BEHIND the
+      -- triangle (a white or red rim), never a ring over the neighbours
+      ring = Dot(self.foeLayer, U.MEDIA .. "tri", "BORDER", self.triS * 1.4),
       imm = Dot(self.topLayer, U.MEDIA .. "circle", "ARTWORK", self.triS * 1.3),
       name = U.Text(self.topLayer, 9, U.NARROW),
     }
+    o.lvl = LevelMark(self.topLayer, o.tri, math.max(8, self.triS * 0.7))
     o.imm:SetVertexColor(1, 0.82, 0.1, 1)
     o.name:Hide()
     self.foes[i] = o
@@ -423,6 +493,7 @@ end
 
 function TM:HideFoe(o)
   o.live, o.guid, o.hit = nil, nil, nil
+  o.lvl:Hide()
   o.tri:Hide()
   o.ring:Hide()
   o.imm:Hide()
@@ -449,6 +520,7 @@ function TM:Pal(i)
   local t = self.pals[i]
   if not t then
     t = Dot(self.palLayer, U.MEDIA .. "pip", "ARTWORK", self.palS)
+    t.lvl = LevelMark(self.palLayer, t, math.max(7, self.palS * 0.8))
     self.pals[i] = t
   end
   return t
@@ -508,8 +580,11 @@ function TM:PaintFoe(o, f, u, x, y, edge, a, now, tg)
   local kos = P:IsKOS(u.name)
   local isTarget = tg and u.guid == tg
   if isTarget or kos then
-    if isTarget then o.ring:SetVertexColor(1, 1, 1, 0.95) else o.ring:SetVertexColor(1, 0.15, 0.15, 0.95) end
-    Size(o.ring, s * 1.55)
+    -- a rim: the marker's own shape (and turn) behind it, 40 % bigger
+    o.ring:SetTexture(U.MEDIA .. (moving and "dart" or "tri"))
+    if moving then U.Rotate(o.ring, u.head) else o.ring:SetTexCoord(0, 1, 0, 1) end
+    if isTarget then o.ring:SetVertexColor(1, 1, 1, a) else o.ring:SetVertexColor(1, 0.15, 0.15, a) end
+    Size(o.ring, (moving and s * 1.1 or s) * 1.45)
     Place(o.ring, f, x, y)
   else
     o.ring:Hide()
@@ -535,6 +610,7 @@ end
 function TM:DrawEnemies(f, now)
   local ne, team = 0, 0
   self.nhits = 0
+  self.nUp, self.nDown = 0, 0
   if B.db.map.enemies then
     local tg = U.GuidOf("target")
     local stealth = B.Tracker.stealth
@@ -549,6 +625,10 @@ function TM:DrawEnemies(f, now)
           local a = (age > 2) and math.max(0.5, 1 - (age - 2) / 8) or 1
           local o = self:Foe(ne)
           self:PaintFoe(o, f, u, x, y, edge, a, now, tg)
+          -- height only from this client's own sight (a teammate's report has no z)
+          local tier = (not edge and u.visible) and self:FloorOf(u.x, u.y, u.z) or nil
+          self:SetLevel(o.lvl, tier)
+          if tier and tier > 0 then self.nUp = self.nUp + 1 elseif tier and tier < 0 then self.nDown = self.nDown + 1 end
           local h = self.hits[ne]
           if not h then
             h = {}
@@ -593,12 +673,14 @@ function TM:DrawFriends(f)
           t:SetVertexColor(r, g, b, UnitIsDeadOrGhost(unit) and 0.3 or 1)
           Place(t, f, x, y)
           t.unit = unit
+          self:SetLevel(t.lvl, self:FloorOf(U.Position(unit)))
         end
       end
     end
   end
   for i = nf + 1, table.getn(self.pals) do
     self.pals[i]:Hide()
+    self.pals[i].lvl:Hide()
     self.pals[i].unit = nil
   end
 end
@@ -626,7 +708,11 @@ function TM:Samples(f)
     local s = spots[i]
     local u = { class = s[3], name = s[4], guid = (i == 2) and tg or ("map" .. i), head = s[5], headAt = s[5] and now or nil }
     local mx, my = self:ToFrame(s[1], s[2])
-    self:PaintFoe(self:Foe(i), f, u, mx, my, false, 1, now, tg)
+    local o = self:Foe(i)
+    self:PaintFoe(o, f, u, mx, my, false, 1, now, tg)
+    -- height marks as they look: the mage on a roof, the hunter on the lower level
+    local lvl = ((B.db.map.height or "on") ~= "off") and ((i == 2) and 2 or ((i == 4) and -1 or nil)) or nil
+    self:SetLevel(o.lvl, lvl)
   end
   for i = table.getn(spots) + 1, table.getn(self.foes) do self:HideFoe(self.foes[i]) end
   self.nhits = 0
@@ -697,12 +783,31 @@ function TM:Update()
 
   -- flag carriers (server-sent positions)
   local F = B.Flags
+  if not self.flagLvl then
+    self.flagLvl = { Alliance = LevelMark(self.topLayer, self.flags.Alliance, 11),
+                     Horde = LevelMark(self.topLayer, self.flags.Horde, 11) }
+  end
   for fac, t in pairs(self.flags) do
     local p = F.pos[fac]
     if p and now - p.t < 6 then
       self:Pin(t, p.mx, p.my, true)
+      -- the carrier's floor, when this client sees them (your own team: always)
+      local c = F.carriers[fac]
+      local lvl
+      if c and not c.dropped then
+        local x, y, z
+        if c.unit then
+          x, y, z = U.Position(c.unit)
+        elseif c.guid and B.Tracker.units[c.guid] and B.Tracker.units[c.guid].visible then
+          local u = B.Tracker.units[c.guid]
+          x, y, z = u.x, u.y, u.z
+        end
+        lvl = self:FloorOf(x, y, z)
+      end
+      self:SetLevel(self.flagLvl[fac], lvl)
     else
       t:Hide()
+      self.flagLvl[fac]:Hide()
     end
   end
   local efc = F:Enemy()
@@ -731,7 +836,15 @@ function TM:Update()
       .. ((ne > 0) and (" |cff73bfff(" .. ne .. " via team)|r") or ""))
   elseif db.count then
     if ne > 0 then
-      self.count:SetText(ne .. (ne == 1 and " enemy" or " enemies") .. ((team > 0) and (" |cff73bfff(" .. team .. " via team)|r") or ""))
+      -- how many are above / below you (the height bars, summed up)
+      local hs = ""
+      if (self.nUp or 0) > 0 or (self.nDown or 0) > 0 then
+        local parts = {}
+        if self.nUp > 0 then table.insert(parts, self.nUp .. " above") end
+        if self.nDown > 0 then table.insert(parts, self.nDown .. " below") end
+        hs = " |cffdddddd- " .. table.concat(parts, ", ") .. "|r"
+      end
+      self.count:SetText(ne .. (ne == 1 and " enemy" or " enemies") .. ((team > 0) and (" |cff73bfff(" .. team .. " via team)|r") or "") .. hs)
     else
       self.count:SetText("|cff888888no enemies in sight|r")
     end
@@ -782,7 +895,12 @@ function TM:Fast()
       local mx, my = GetPlayerMapPosition(t.unit)
       if mx and (mx ~= 0 or my ~= 0) then
         local x, y, edge = self:ToFrame(mx, my)
-        if edge then t:Hide() else Place(t, f, x, y) end
+        if edge then
+          t:Hide()
+          t.lvl:Hide()
+        else
+          Place(t, f, x, y)
+        end
       end
     end
   end

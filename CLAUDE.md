@@ -1,5 +1,37 @@
 # OctoBG - notes for Claude Code
 
+## Cross-faction battlegrounds, height marks (29 Oct 2026)
+- User: cross-faction BGs were just added - "paladins on the horde side look like enemies on the map",
+  "it shows our flag carrier as the EFC"; and wanted the Y axis (roof / ground in WSG) shown neatly.
+- Cause: B.faction came from UnitFactionGroup("player") = the character's faction, not the side played
+  for; Tracker:Consider fell back to comparing UnitFactionGroup. Now (Core.lua "teams"): in a
+  battleground B.faction / B.enemy come from the scoreboard row with our own name (GetBattlefieldScore
+  faction 0 Horde / 1 Alliance; asked every 2 s up to 30 s after entering), `B.scoreSide[name]`,
+  `B.raidGuid` (raid / party GUIDs); `B:SideOf(guid, name)` = raid -> friend, scoreboard side, else nil.
+  Tracker in BGs: SideOf, then UnitCanAttack - never the faction. OBG_TEAM fires on side / roster
+  changes: Tracker drops teammates and clears rejects, Flags re-judges carriers (EFC = carrier of
+  carriers[B.faction]). B.home = the character's faction, restored outside BGs. db.flagTokens is learned
+  once more (flagTokensV 2) in case a mixed game taught it backwards.
+- Not verified in game: that this server's scoreboard faction is the side played for (assumed: it is
+  what the scoreboard tabs sort by); UnitCanAttack on cross-faction teammates.
+- Height marks, second version (same day, user: the blue arrow looked like a mage, triangles confuse,
+  should work anywhere, start only past a safe height, show steps, stay tidy with many players):
+  `M.HeightTier(z, pz, step)` relative to you, 0 within db.map.heightStep (10 yd), 1 / 2 / 3 from
+  1x / 2x / 4x step, negative below. Up to three white bars with a black rim (ARTWORK rim under
+  OVERLAY bar - a set draw order) stacked above the marker (higher) or below it (lower), anchored to
+  the marker; db.map.height "on" | "off". Count line: "N above, M below".
+- Target / Kill On Sight marking: no circle over the neighbours any more - the marker's own shape (and
+  turn) 45 % bigger in white / red BEHIND it (foeLayer BORDER), a rim.
+- modules/BGTidy.lua ("Clean screen, AV mode" page): db.tidy.scoreFrame hides WorldStateAlwaysUpFrame
+  in battlegrounds (its Show replaced while hidden, given back after); db.tidy.bigwigs wraps BigWigs'
+  "Arathi Basin" / "Alterac Valley" modules' `Bar` (BigWigs:GetModule) to skip bars while our Timers
+  panel is on in AB / AV. AV mode (db.avmode, /obg avmode, binding OCTOBG_AVMODE, a movable button
+  panel "avbutton"): ShowNameplates + HideFriendNameplates; with pfUI's nameplates its hide keys
+  enemynpc / neutralnpc / friendlynpc / friendlyplayer set to "1" (saved values restored after), else
+  non-enemy-player plates (nampower GetName(1), UnitIsPlayer + UnitCanAttack) get alpha 0 and no mouse
+  every 0.1 s. Not verified in game: NAMEPLATES_ON globals on this client, pfUI's reaction to live
+  config changes (HidePlate reads C each update), the score frame staying hidden.
+
 ## Threat moved out to pfUI Octo (23 Oct 2026, v2.3.0)
 - User (screenshot of pfUI's basic Threat page): "bring the threat section over here and add to it
   ... Remove anything to do with threat tracking from OBG". modules/Threat.lua and ThreatOptions.lua

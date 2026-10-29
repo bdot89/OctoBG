@@ -12,7 +12,7 @@
 OctoBG = {}
 local B = OctoBG
 
-B.VERSION = "2.3.0"
+B.VERSION = "2.3.1"
 B.env = { superwow = false, nampower = false, unitxp = false, safe = false }
 B.zone = nil        -- "WSG", "AB", "AV", "TG" (Thorn Gorge), "ARENA" or nil
 B.zoneName = nil
@@ -50,6 +50,7 @@ BINDING_NAME_OCTOBG_KOS = "Kill On Sight: add / remove your target"
 BINDING_NAME_OCTOBG_IGNORE = "Ignore: add / remove your target"
 BINDING_NAME_OCTOBG_NEARBY = "Post the nearby enemy count"
 BINDING_NAME_OCTOBG_INTERACT = "Interact: nearest NPC or object (returns / picks up a flag)"
+BINDING_NAME_OCTOBG_AVMODE = "AV mode on / off (nameplates for enemy players only)"
 
 B.DEFAULTS = {
   locked = true,
@@ -70,7 +71,7 @@ B.DEFAULTS = {
            tipNear = true, tipAnchor = "ANCHOR_LEFT", distance = true, rate = 4, feedback = true, mode = 1 },
   -- the enemy map; names: none | marked (target, Kill On Sight) | all
   map = { enabled = true, width = 260, enemies = true, dim = 0.3, explore = true, bases = true, worldKey = "game", bigWidth = 720, world = false, zoom = 1, zoomWorld = 3, names = "marked",
-          mouse = true, heading = true, count = true },
+          mouse = true, heading = true, count = true, height = "on", heightStep = 10 },
   stealth = { enabled = true, alert = true, range = 60 },   -- range: alert when they stealth this close (0 = any)
   optAlpha = 0.95,   -- options window background (the slider at its top)
   reach = {},        -- per zone: how far enemies were picked up (Tracker)
@@ -289,9 +290,90 @@ B:On("PLAYER_ENTERING_WORLD", function()
         .. "teammates' OctoBG shares). Start WoW with SuperWoW to see them. /obg status shows what's running.")
     end
   end
-  B.faction = UnitFactionGroup("player")
-  B.enemy = (B.faction == "Alliance") and "Horde" or "Alliance"
+  B.home = UnitFactionGroup("player")
+  if not B.zone then B:SetTeam(B.home) end
   B:UpdateZone(true)
+end)
+
+-- ---------------------------------------------------------------- teams
+-- Cross-faction battlegrounds (OctoWoW, Oct 2026): UnitFactionGroup tells a
+-- character's own faction, not the side it plays for, so a Horde character on
+-- the Alliance team saw its own flag carrier as the EFC, and Alliance-race
+-- teammates looked like enemies. In a battleground the side comes from the
+-- scoreboard (GetBattlefieldScore's faction: 0 Horde, 1 Alliance - our own
+-- name's row) and teammates are the raid; B.faction / B.enemy follow it and
+-- OBG_TEAM fires when it changes. Outside battlegrounds: the character's own.
+B.scoreSide = {}   -- name -> "Horde" / "Alliance" from the scoreboard (cleared on zone change)
+B.raidGuid = {}    -- GUID -> true for raid / party members (rebuilt on roster changes)
+
+function B:SetTeam(fac)
+  if not fac then return end
+  local changed = (fac ~= self.faction)
+  self.faction = fac
+  self.enemy = (fac == "Alliance") and "Horde" or "Alliance"
+  if changed and self.db then self:Fire("OBG_TEAM", fac) end
+end
+
+function B:ReadScore()
+  local me = UnitName("player")
+  local n = GetNumBattlefieldScores and GetNumBattlefieldScores() or 0
+  for i = 1, n do
+    local name, _, _, _, _, fac = GetBattlefieldScore(i)
+    if name then
+      local side = (fac == 0) and "Horde" or ((fac == 1) and "Alliance" or nil)
+      self.scoreSide[name] = side
+      if name == me and side and self:IsBG() and side ~= self.faction then
+        self:SetTeam(side)
+        if side ~= self.home then B:Print("cross-faction battleground: you play for the |cffffd100" .. side .. "|r here") end
+      end
+    end
+  end
+end
+
+function B:ReadRaid()
+  local t = {}
+  local function Add(unit)
+    local g = B.U.GuidOf(unit)
+    if g then t[g] = true end
+  end
+  for i = 1, GetNumRaidMembers() do Add("raid" .. i) end
+  for i = 1, GetNumPartyMembers() do Add("party" .. i) end
+  self.raidGuid = t
+  self:Fire("OBG_TEAM", self.faction)
+end
+
+-- "friend" / "enemy" for a player in a battleground, nil when unknown.
+function B:SideOf(guid, name)
+  if guid and self.raidGuid[guid] then return "friend" end
+  name = name or (guid and B.U.GuidExists(guid) and UnitName(guid))
+  local s = name and self.scoreSide[name]
+  if s then return (s == self.faction) and "friend" or "enemy" end
+  return nil
+end
+
+B:On("UPDATE_BATTLEFIELD_SCORE", function() B:ReadScore() end)
+B:On("RAID_ROSTER_UPDATE", function() B:ReadRaid() end)
+B:On("PARTY_MEMBERS_CHANGED", function() B:ReadRaid() end)
+B:On("OBG_ZONE", function(ev, z)
+  B.scoreSide = {}
+  if not B:IsBG() then
+    B:SetTeam(B.home or UnitFactionGroup("player"))
+  else
+    B.teamAsk = 0
+    if RequestBattlefieldScoreData then RequestBattlefieldScoreData() end
+  end
+  B:ReadRaid()
+end)
+-- until the scoreboard has named our side, ask for it every 2 s (30 s at most)
+B:Every(2, function()
+  if not B:IsBG() or (B.teamAsk or 99) >= 15 then return end
+  local me = UnitName("player")
+  if B.scoreSide[me] then
+    B.teamAsk = 99
+    return
+  end
+  B.teamAsk = B.teamAsk + 1
+  if RequestBattlefieldScoreData then RequestBattlefieldScoreData() end
 end)
 
 B:On("ZONE_CHANGED_NEW_AREA", function()

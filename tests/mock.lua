@@ -169,6 +169,7 @@ end
 
 UIParent = New("Frame", "UIParent")
 WorldFrame = New("Frame", "WorldFrame")
+WorldStateAlwaysUpFrame = New("Frame", "WorldStateAlwaysUpFrame", UIParent)
 Minimap = New("Frame", "Minimap")
 local arrow = New("Model", nil, Minimap)
 arrow.model = "Interface\\Minimap\\MinimapArrow.mdx"
