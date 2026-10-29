@@ -948,9 +948,10 @@ BUILD.interact = function(p)
   W.KeyBind(p, "Key", "The key that interacts with the nearest thing.", "OCTOBG_INTERACT")
   W.Buttons(p, { { "Try it", function() IN:Use() end, 80, "Right-clicks the nearest NPC or object now." } })
   W.Card(p, "Installing it (once)", { folded = IN:Available(), text = "The game and your other DLLs can't click objects for an addon. One free file adds it." })
-  W.Note(p, "1. Download |cffffd100interact.dll|r from " .. IN.URL .. " (Releases).\n"
-    .. "2. Put it in your game folder, next to WoW.exe.\n"
-    .. "3. Open |cffffd100dlls.txt|r in that folder and add a line: interact.dll\n"
+  W.Note(p, "Easiest: close the game and run |cffffd100Install pfUI Octo DLLs.bat|r in the pfUI folder.\n"
+    .. "Or by hand: 1. Download |cffffd100Interact.zip|r from " .. IN.URL .. " (Releases).\n"
+    .. "2. Put Interact.dll in your game folder, next to WoW.exe.\n"
+    .. "3. Open |cffffd100dlls.txt|r in that folder and add a last line: Interact.dll\n"
     .. "4. Restart the game. The line above turns green.", 0, true)
 end
 BUILD.tidy = function(p)
