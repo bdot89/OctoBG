@@ -193,7 +193,7 @@ O:Open("detect")
 ok(O.current == "world", "detect opens Detection")
 -- folding cards: shut, open, remembered, reset
 local mp = O:Page("map")
-ok(table.getn(mp.cards) == 3, "enemy map page has three cards")
+ok(table.getn(mp.cards) == 5, "enemy map page has five cards")
 O:Select("map")
 Mock.Tick(0.1)
 local c1 = mp.cards[1]
@@ -431,14 +431,55 @@ ok(HT(nil, 300, 10) == nil, "no height: no bars")
 local fo = B.TacMap:Foe(1)
 B.TacMap:SetLevel(fo.lvl, 2)
 ok(fo.lvl.bars[1].bg:IsShown() and fo.lvl.bars[2].bg:IsShown() and not fo.lvl.bars[3].bg:IsShown(), "two bars")
-ok(fo.lvl.bars[1].bg.point[1] == "BOTTOM" and fo.lvl.bars[1].bg.point[2] == fo.tri, "higher: bars above the marker")
+ok(fo.lvl.bars[1].bg.point[1] == "BOTTOMLEFT" and fo.lvl.bars[1].bg.point[3] == "RIGHT" and fo.lvl.bars[1].bg.point[2] == fo.tri,
+  "higher: bars at the marker's right, going up")
 B.TacMap:SetLevel(fo.lvl, -1)
-ok(fo.lvl.bars[1].bg.point[1] == "TOP" and not fo.lvl.bars[2].bg:IsShown(), "lower: one bar below the marker")
+ok(fo.lvl.bars[1].bg.point[1] == "TOPLEFT" and not fo.lvl.bars[2].bg:IsShown(), "lower: one bar at its right, going down")
+B.db.map.heightPlace = "stack"
+B.TacMap:SetLevel(fo.lvl, 1)
+ok(fo.lvl.bars[1].bg.point[1] == "BOTTOM" and fo.lvl.bars[1].bg.point[3] == "TOP", "or stacked above the marker")
+B.db.map.heightPlace, B.db.map.heightStyle = "side", "number"
+B.TacMap:SetLevel(fo.lvl, 1, 14.6)
+ok(fo.lvl.text:IsShown() and fo.lvl.text.text == "+15" and not fo.lvl.bars[1].bg:IsShown(), "yards look: +15")
+B.db.map.heightStyle = "signs"
+B.TacMap:SetLevel(fo.lvl, -2, -25)
+ok(fo.lvl.text.text == "--", "signs look: --")
+B.db.map.heightStyle = "bars"
 B.TacMap:SetLevel(fo.lvl, 0)
-ok(not fo.lvl.bars[1].bg:IsShown(), "level with you: nothing")
+ok(not fo.lvl.bars[1].bg:IsShown() and not fo.lvl.text:IsShown(), "level with you: nothing")
+B.db.map.heightWho = "enemies"
+ok(B.TacMap:HeightFor("enemy") and not B.TacMap:HeightFor("friend"), "on enemies only")
+B.db.map.heightWho = "friends"
+ok(B.TacMap:FloorOf(0, 0, 400, "enemy") == nil, "team only: no marks on enemies")
+B.db.map.heightWho = "both"
 B.db.map.height = "off"
-ok(B.TacMap:FloorOf(0, 0, 400) == nil, "height bars off")
+ok(B.TacMap:FloorOf(0, 0, 400) == nil, "height marks off")
 B.db.map.height = "on"
+-- the above / below box on the map
+B.TacMap.nUp, B.TacMap.nDown = 2, 7
+B.TacMap:HeightBox()
+local hb = B.TacMap.hbox
+ok(hb:IsShown() and hb.upText.text == "2 above" and hb.downText.text == "7 below", "above / below box on the map")
+ok(hb.point and hb.point[1] == "BOTTOMLEFT" and hb.point[2] == B.TacMap.frame, "box in its corner")
+B.TacMap.nUp, B.TacMap.nDown = 0, 0
+B.TacMap:HeightBox()
+ok(not hb:IsShown(), "nobody above or below: no box")
+-- names in a crowd move apart
+local n1, n2 = B.TacMap:Foe(1), B.TacMap:Foe(2)
+n1.hit, n2.hit = { x = 100, y = 50 }, { x = 104, y = 52 }
+n1.name:SetText("Xilith-NZ") n2.name:SetText("Travis-NZ")
+n1.name:Show() n2.name:Show()
+B.TacMap:SpreadNames(2)
+ok(n1.nameDy == 0 and n2.nameDy >= 10, "two names on one spot: the second moves a line down")
+n1.name:Hide() n2.name:Hide()
+n1.hit, n2.hit = nil, nil
+-- map look: borders and the plaque
+B.db.map.border, B.db.map.plaque = "gold", true
+B.TacMap:Layout()
+ok(B.TacMap.edge and B.TacMap.edge:IsShown() and B.TacMap.plaqueHolder:IsShown(), "gold frame and title plaque")
+B.db.map.border, B.db.map.plaque = "thin", false
+B.TacMap:Layout()
+ok(not B.TacMap.edge:IsShown() and not B.TacMap.plaqueHolder:IsShown(), "back to the thin line")
 
 -- the game's score frame, BigWigs' battleground bars, AV mode
 local BT = B.BGTidy

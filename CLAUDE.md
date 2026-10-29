@@ -20,6 +20,16 @@
   1x / 2x / 4x step, negative below. Up to three white bars with a black rim (ARTWORK rim under
   OVERLAY bar - a set draw order) stacked above the marker (higher) or below it (lower), anchored to
   the marker; db.map.height "on" | "off". Count line: "N above, M below".
+- v2.3.2 (user, screenshots of crowds: bars too big, names over the bars below, "9 below" wanted on
+  the map in its own box, choices for who / look / colour / place, map borders and art): marks are
+  smaller (bars 0.45 x marker, 1.5 px) and can be bars / yards ("+15") / signs (+ ++ / - --);
+  db.map.heightWho both | enemies | friends, heightPlace side (default: top right / bottom right, never
+  under the marker where names go) | left | stack, heightUp / heightDown colours. `TM:SpreadNames`
+  moves a name that would touch one above it down a line (up to 3), `o.nameDy` keeps it in MoveFoe.
+  `TM:HeightBox`: a dark box in a map corner (heightBox, heightBoxAt) with the mark and "2 above / 7
+  below" (counts every enemy in sight). `TM:Skin` (from Layout): db.map.border thin | none | tooltip |
+  gold | stone | solid (an edge frame over the layers, outset by the art's width), borderColor, plaque
+  (UI-DialogBox-Header with GetRealZoneText).
 - Target / Kill On Sight marking: no circle over the neighbours any more - the marker's own shape (and
   turn) 45 % bigger in white / red BEHIND it (foeLayer BORDER), a rim.
 - modules/BGTidy.lua ("Clean screen, AV mode" page): db.tidy.scoreFrame hides WorldStateAlwaysUpFrame

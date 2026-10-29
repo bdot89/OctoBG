@@ -321,6 +321,71 @@ function TM:Layout()
   self.triS = self.ringS * 1.15
   self.palS = self.ringS * 0.6
   for i = 1, table.getn(self.pals) do Size(self.pals[i], self.palS) end
+  self:Skin()
+end
+
+-- ---------------------------------------------------------------- look
+-- The map's frame (db.map.border): the thin line it always had, none, the
+-- game's tooltip edge, the gold or stone dialog edges, or a solid frame; a
+-- colour for the line / tooltip / solid ones (db.map.borderColor); and the
+-- stone title plaque with the zone's name on top (db.map.plaque). All of it
+-- is the game's own art (Widgets.lua ART, checked in this client's MPQs).
+local EDGES = {
+  tooltip = { "Interface\\Tooltips\\UI-Tooltip-Border", 16, 4, true },
+  gold = { "Interface\\DialogFrame\\UI-DialogBox-Gold-Border", 32, 10, false },
+  stone = { "Interface\\DialogFrame\\UI-DialogBox-Border", 32, 10, false },
+  solid = { U.WHITE, 3, 3, true },
+}
+TM.BORDERS = { { key = "thin", label = "A thin line" }, { key = "none", label = "None" },
+               { key = "tooltip", label = "Tooltip edge" }, { key = "gold", label = "Gold frame (dialog)" },
+               { key = "stone", label = "Stone frame (dialog)" }, { key = "solid", label = "Solid frame" } }
+
+function TM:Skin()
+  local f, db = self.frame, B.db.map
+  local c = db.borderColor or { 0.22, 0.22, 0.25 }
+  local style = db.border or "thin"
+  f:SetBackdropBorderColor(c[1], c[2], c[3], (style == "thin") and 1 or 0)
+  local e = EDGES[style]
+  if e then
+    if not self.edge then
+      self.edge = CreateFrame("Frame", nil, f)
+      self.edge:SetFrameLevel(f:GetFrameLevel() + 7)   -- over the tiles and markers' layers
+    end
+    local ed = self.edge
+    ed:ClearAllPoints()
+    ed:SetPoint("TOPLEFT", f, "TOPLEFT", -e[3], e[3])
+    ed:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", e[3], -e[3])
+    ed:SetBackdrop({ edgeFile = e[1], edgeSize = e[2], tile = false, insets = { left = 0, right = 0, top = 0, bottom = 0 } })
+    if e[4] then ed:SetBackdropBorderColor(c[1], c[2], c[3], 1) else ed:SetBackdropBorderColor(1, 1, 1, 1) end
+    ed:Show()
+  elseif self.edge then
+    self.edge:Hide()
+  end
+  -- the title plaque with the zone's name
+  if db.plaque then
+    if not self.plaque then
+      local holder = CreateFrame("Frame", nil, f)
+      holder:SetFrameLevel(f:GetFrameLevel() + 8)
+      holder:SetAllPoints(f)
+      local h = holder:CreateTexture(nil, "ARTWORK")
+      h:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
+      local t = U.Text(holder, 11)
+      t:SetTextColor(1, 0.82, 0)
+      self.plaque, self.plaqueText = h, t
+      self.plaqueHolder = holder
+    end
+    local pw = math.min(260, math.max(150, self.w * 0.55))
+    self.plaque:SetWidth(pw)
+    self.plaque:SetHeight(pw * 0.2)
+    self.plaque:ClearAllPoints()
+    self.plaque:SetPoint("TOP", f, "TOP", 0, pw * 0.2 * 0.38)
+    self.plaqueText:ClearAllPoints()
+    self.plaqueText:SetPoint("TOP", self.plaque, "TOP", 0, -pw * 0.2 * 0.22)
+    self.plaqueText:SetText(GetRealZoneText and GetRealZoneText() or "")
+    self.plaqueHolder:Show()
+  elseif self.plaqueHolder then
+    self.plaqueHolder:Hide()
+  end
 end
 
 function TM:SetFile(file)
@@ -405,69 +470,113 @@ function TM:CropOverlays(vx, vy, vw, vh, k)
 end
 
 -- ---------------------------------------------------------------- height marks
--- Up to three short white bars with a black rim, stacked ABOVE a marker when
--- that player is higher than you and BELOW it when lower: one bar from
--- db.map.heightStep yards (10), two from twice that, three from four times
--- (M.HeightTier). No colour of their own (every colour is some class's) and
--- no triangles (enemies are triangles): place and count say it. Within the
--- step nothing is drawn, so a slope never counts and ten players on one roof
--- are ten small bar stacks, not ten icons. Anchored to the marker, the bars
--- move with it every frame. db.map.height "off" switches them off.
-local BAR_GAP = 3
-local function LevelMark(layer, owner, width)
-  local m = { owner = owner, bars = {} }
+-- How high or low a player is against you, drawn small by their marker:
+--   bars    up to three thin bars (one from db.map.heightStep yards, two from
+--           twice that, three from four times - M.HeightTier)
+--   number  the yards: "+15" / "-22"
+--   signs   "+" "++" "+++" / "-" "--" "---"
+-- Where: beside the marker (higher at its top right, lower at its bottom
+-- right - never under it, where the name goes), the left side, or stacked
+-- above / below it. Colours of your own for higher and lower (white by
+-- default: every bright colour is some class's). Who: enemies, your team,
+-- both or nobody (db.map.heightWho). Within the step nothing is drawn, so a
+-- slope never counts. Anchored to the marker, the mark moves with it every frame.
+local BAR_W, BAR_H, BAR_GAP = 0.45, 1.5, 2.5   -- bar width (x marker size), height, spacing
+local function LevelMark(layer, owner, size)
+  local m = { owner = owner, bars = {}, size = size }
+  local w = math.max(5, size * BAR_W / 0.7)
   for i = 1, 3 do
     local bg = U.Tex(layer, U.WHITE, "ARTWORK")      -- the black rim (ARTWORK under OVERLAY: a set order)
-    bg:SetVertexColor(0, 0, 0, 0.9)
-    bg:SetWidth(width + 2)
-    bg:SetHeight(4)
+    bg:SetVertexColor(0, 0, 0, 0.85)
+    bg:SetWidth(w + 2)
+    bg:SetHeight(BAR_H + 2)
     local fg = U.Tex(layer, U.WHITE, "OVERLAY")
-    fg:SetVertexColor(1, 1, 1, 1)
-    fg:SetWidth(width)
-    fg:SetHeight(2)
+    fg:SetWidth(w)
+    fg:SetHeight(BAR_H)
     fg:SetPoint("CENTER", bg, "CENTER", 0, 0)
     bg:Hide()
     fg:Hide()
     m.bars[i] = { bg = bg, fg = fg }
   end
+  m.text = U.Text(layer, 8, U.NARROW)
+  m.text:Hide()
   m.Hide = function(self)
     for i = 1, 3 do
       self.bars[i].bg:Hide()
       self.bars[i].fg:Hide()
     end
+    self.text:Hide()
   end
   return m
 end
 
--- The height step of a player at world height z (nil = no mark).
-function TM:FloorOf(x, y, z)
-  if (B.db.map.height or "on") == "off" or not z then return nil end
-  local _, _, pz = M:PlayerWorld()
-  return M.HeightTier(z, pz, B.db.map.heightStep or 10)
+-- Does this kind of player ("enemy" / "friend") get height marks?
+function TM:HeightFor(kind)
+  local db = B.db.map
+  if db.height == "off" then return false end
+  local who = db.heightWho or "both"
+  return who == "both" or (who == "enemies" and kind == "enemy") or (who == "friends" and kind == "friend")
 end
 
-function TM:SetLevel(m, tier)
+-- The height step (and yards) of a player at world height z, against you.
+function TM:FloorOf(x, y, z, kind)
+  if not z or (kind and not self:HeightFor(kind)) or B.db.map.height == "off" then return nil end
+  local _, _, pz = M:PlayerWorld()
+  if not pz then return nil end
+  return M.HeightTier(z, pz, B.db.map.heightStep or 10), z - pz
+end
+
+-- anchor of the mark (first bar / the text) on the marker, and the way bars stack
+local PLACES = {
+  side = { up = { "BOTTOMLEFT", "RIGHT", 1, 1 }, down = { "TOPLEFT", "RIGHT", 1, -1 } },
+  left = { up = { "BOTTOMRIGHT", "LEFT", -1, 1 }, down = { "TOPRIGHT", "LEFT", -1, -1 } },
+  stack = { up = { "BOTTOM", "TOP", 0, 1 }, down = { "TOP", "BOTTOM", 0, -1 } },
+}
+
+function TM:SetLevel(m, tier, d)
   if not tier or tier == 0 then
     m:Hide()
     return
   end
-  local n = math.abs(tier)
+  local db = B.db.map
   local up = tier > 0
-  for i = 1, 3 do
-    local b = m.bars[i]
-    if i <= n then
-      b.bg:ClearAllPoints()
-      if up then
-        b.bg:SetPoint("BOTTOM", m.owner, "TOP", 0, 1 + (i - 1) * BAR_GAP)
+  local n = math.abs(tier)
+  local c = up and (db.heightUp or { 1, 1, 1 }) or (db.heightDown or { 1, 1, 1 })
+  local p = (PLACES[db.heightPlace or "side"] or PLACES.side)[up and "up" or "down"]
+  local style = db.heightStyle or "bars"
+  if style == "bars" then
+    m.text:Hide()
+    local step = (up and 1 or -1) * BAR_GAP
+    for i = 1, 3 do
+      local b = m.bars[i]
+      if i <= n then
+        b.bg:ClearAllPoints()
+        b.bg:SetPoint(p[1], m.owner, p[2], p[3], p[4] + (i - 1) * step)
+        b.fg:SetVertexColor(c[1], c[2], c[3], 1)
+        b.bg:Show()
+        b.fg:Show()
       else
-        b.bg:SetPoint("TOP", m.owner, "BOTTOM", 0, -1 - (i - 1) * BAR_GAP)
+        b.bg:Hide()
+        b.fg:Hide()
       end
-      b.bg:Show()
-      b.fg:Show()
-    else
-      b.bg:Hide()
-      b.fg:Hide()
     end
+  else
+    for i = 1, 3 do
+      m.bars[i].bg:Hide()
+      m.bars[i].fg:Hide()
+    end
+    local s
+    if style == "number" and d then
+      s = (up and "+" or "-") .. math.floor(math.abs(d) + 0.5)
+    else
+      s = string.rep(up and "+" or "-", n)
+    end
+    m.text:SetFont(U.NARROW, math.max(8, m.size * 0.6), "OUTLINE")
+    m.text:SetText(s)
+    m.text:SetTextColor(c[1], c[2], c[3], 1)
+    m.text:ClearAllPoints()
+    m.text:SetPoint(p[1], m.owner, p[2], p[3], p[4])
+    m.text:Show()
   end
 end
 
@@ -600,6 +709,7 @@ function TM:PaintFoe(o, f, u, x, y, edge, a, now, tg)
     o.name:SetText(u.name)
     o.name:SetTextColor(r, g, b, a)
     o.name:ClearAllPoints()
+    o.nameDy = 0   -- SpreadNames moves it down a line or two in a crowd
     o.name:SetPoint("TOP", f, "TOPLEFT", x, -y - s * 0.55)
     o.name:Show()
   else
@@ -626,8 +736,14 @@ function TM:DrawEnemies(f, now)
           local o = self:Foe(ne)
           self:PaintFoe(o, f, u, x, y, edge, a, now, tg)
           -- height only from this client's own sight (a teammate's report has no z)
-          local tier = (not edge and u.visible) and self:FloorOf(u.x, u.y, u.z) or nil
-          self:SetLevel(o.lvl, tier)
+          local tier, dz
+          if not edge and u.visible then tier, dz = self:FloorOf(u.x, u.y, u.z, "enemy") end
+          self:SetLevel(o.lvl, tier, dz)
+          -- the above / below box counts every enemy in sight, marks or not
+          if not tier and not edge and u.visible and B.db.map.height ~= "off" then
+            local _, _, pz = M:PlayerWorld()
+            tier = M.HeightTier(u.z, pz, B.db.map.heightStep or 10)
+          end
           if tier and tier > 0 then self.nUp = self.nUp + 1 elseif tier and tier < 0 then self.nDown = self.nDown + 1 end
           local h = self.hits[ne]
           if not h then
@@ -650,7 +766,96 @@ function TM:DrawEnemies(f, now)
     if h then h.u = nil end
   end
   self.nfoes = ne
+  self:SpreadNames(ne)
   return ne, team
+end
+
+-- The above / below box on the map: a dark box in a corner (db.map.heightBoxAt)
+-- with the height mark and how many enemies in sight are higher / lower than you.
+local BOX_POINTS = { BOTTOMLEFT = { 4, 4 }, BOTTOMRIGHT = { -4, 4 }, TOPLEFT = { 4, -4 }, TOPRIGHT = { -4, -18 } }
+function TM:HeightBox()
+  local db = B.db.map
+  local box = self.hbox
+  if not box then
+    box = CreateFrame("Frame", nil, self.topLayer)
+    box:SetHeight(20)
+    U.Backdrop(box, 0.8)
+    box:SetBackdropBorderColor(0.45, 0.45, 0.5, 1)
+    box.upAt = U.Tex(box, nil, "ARTWORK")      -- invisible anchors the marks sit on
+    box.upAt:SetWidth(8)
+    box.upAt:SetHeight(1)
+    box.upAt:SetPoint("LEFT", box, "LEFT", 6, -3)
+    box.up = LevelMark(box, box.upAt, 12)
+    box.upText = U.Text(box, 11, U.NARROW)
+    box.upText:SetPoint("LEFT", box, "LEFT", 18, 0)
+    box.downAt = U.Tex(box, nil, "ARTWORK")
+    box.downAt:SetWidth(8)
+    box.downAt:SetHeight(1)
+    box.down = LevelMark(box, box.downAt, 12)
+    box.downText = U.Text(box, 11, U.NARROW)
+    self.hbox = box
+  end
+  local up, down = self.nUp or 0, self.nDown or 0
+  if not db.heightBox or db.height == "off" or (up == 0 and down == 0) then
+    box:Hide()
+    return
+  end
+  local place = db.heightPlace
+  db.heightPlace = "stack"           -- the box's icons: bars above / below their spot
+  self:SetLevel(box.up, 2, 20)
+  self:SetLevel(box.down, -2, -20)
+  db.heightPlace = place
+  local cu = db.heightUp or { 1, 1, 1 }
+  local cd = db.heightDown or { 1, 1, 1 }
+  box.upText:SetText(up .. " above")
+  box.upText:SetTextColor(cu[1], cu[2], cu[3])
+  local uw = box.upText:GetStringWidth() or 40
+  box.downAt:ClearAllPoints()
+  box.downAt:SetPoint("LEFT", box, "LEFT", 28 + uw, 3)
+  box.downText:ClearAllPoints()
+  box.downText:SetPoint("LEFT", box, "LEFT", 40 + uw, 0)
+  box.downText:SetText(down .. " below")
+  box.downText:SetTextColor(cd[1], cd[2], cd[3])
+  box:SetWidth(46 + uw + (box.downText:GetStringWidth() or 40))
+  local at = BOX_POINTS[db.heightBoxAt or "BOTTOMLEFT"] and (db.heightBoxAt or "BOTTOMLEFT") or "BOTTOMLEFT"
+  box:ClearAllPoints()
+  box:SetPoint(at, self.frame, at, BOX_POINTS[at][1], BOX_POINTS[at][2])
+  box:Show()
+end
+
+-- Names in a crowd: from the top down, a name that would touch one already
+-- placed moves a line down (up to three lines), so every name stays readable.
+local NAME_LINE = 10
+function TM:SpreadNames(ne)
+  local list = {}
+  for i = 1, ne do
+    local o = self.foes[i]
+    if o.name:IsShown() and o.hit then table.insert(list, o) end
+  end
+  table.sort(list, function(a, b) return a.hit.y < b.hit.y end)
+  local placed = {}
+  for i = 1, table.getn(list) do
+    local o = list[i]
+    local x = o.hit.x
+    local y0 = o.hit.y + (o.s or self.triS) * 0.55
+    local w = (o.name:GetStringWidth() or 40) / 2 + 2
+    local dy = 0
+    for k = 0, 3 do
+      dy = k * NAME_LINE
+      local clash = false
+      for j = 1, table.getn(placed) do
+        local q = placed[j]
+        if math.abs(q.x - x) < q.w + w and math.abs(q.y - (y0 + dy)) < NAME_LINE then
+          clash = true
+          break
+        end
+      end
+      if not clash then break end
+    end
+    o.nameDy = dy
+    o.name:SetPoint("TOP", self.frame, "TOPLEFT", x, -y0 - dy)
+    table.insert(placed, { x = x, y = y0 + dy, w = w })
+  end
 end
 
 -- Raid (or party) members.
@@ -673,7 +878,8 @@ function TM:DrawFriends(f)
           t:SetVertexColor(r, g, b, UnitIsDeadOrGhost(unit) and 0.3 or 1)
           Place(t, f, x, y)
           t.unit = unit
-          self:SetLevel(t.lvl, self:FloorOf(U.Position(unit)))
+          local ux, uy, uz = U.Position(unit)
+          self:SetLevel(t.lvl, self:FloorOf(ux, uy, uz, "friend"))
         end
       end
     end
@@ -731,6 +937,8 @@ function TM:Samples(f)
   Place(gh.area, f, x, y)
   self.where:SetText("|cffff5555EFC|r Testrogue - Horde base - lower level")
   self.count:SetText("4 enemies")
+  self.nUp, self.nDown = 1, 1   -- the above / below box as it looks
+  self:HeightBox()
 end
 
 function TM:Update()
@@ -779,6 +987,7 @@ function TM:Update()
 
   self:DrawFriends(f)
   local ne, team = self:DrawEnemies(f, now)
+  self:HeightBox()
   self:DrawStealth(f, now)
 
   -- flag carriers (server-sent positions)
@@ -793,7 +1002,7 @@ function TM:Update()
       self:Pin(t, p.mx, p.my, true)
       -- the carrier's floor, when this client sees them (your own team: always)
       local c = F.carriers[fac]
-      local lvl
+      local lvl, dz
       if c and not c.dropped then
         local x, y, z
         if c.unit then
@@ -802,9 +1011,9 @@ function TM:Update()
           local u = B.Tracker.units[c.guid]
           x, y, z = u.x, u.y, u.z
         end
-        lvl = self:FloorOf(x, y, z)
+        lvl, dz = self:FloorOf(x, y, z, c.enemy and "enemy" or "friend")
       end
-      self:SetLevel(self.flagLvl[fac], lvl)
+      self:SetLevel(self.flagLvl[fac], lvl, dz)
     else
       t:Hide()
       self.flagLvl[fac]:Hide()
@@ -836,9 +1045,9 @@ function TM:Update()
       .. ((ne > 0) and (" |cff73bfff(" .. ne .. " via team)|r") or ""))
   elseif db.count then
     if ne > 0 then
-      -- how many are above / below you (the height bars, summed up)
+      -- how many are above / below you: in the box on the map, else here
       local hs = ""
-      if (self.nUp or 0) > 0 or (self.nDown or 0) > 0 then
+      if not B.db.map.heightBox and ((self.nUp or 0) > 0 or (self.nDown or 0) > 0) then
         local parts = {}
         if self.nUp > 0 then table.insert(parts, self.nUp .. " above") end
         if self.nDown > 0 then table.insert(parts, self.nDown .. " below") end
@@ -874,7 +1083,7 @@ function TM:MoveFoe(o, f, x, y)
   o.tri:SetPoint("CENTER", f, "TOPLEFT", x, -y)
   if o.ring:IsShown() then o.ring:SetPoint("CENTER", f, "TOPLEFT", x, -y) end
   if o.imm:IsShown() then o.imm:SetPoint("CENTER", f, "TOPLEFT", x, -y) end
-  if o.name:IsShown() then o.name:SetPoint("TOP", f, "TOPLEFT", x, -y - (o.s or self.triS) * 0.55) end
+  if o.name:IsShown() then o.name:SetPoint("TOP", f, "TOPLEFT", x, -y - (o.s or self.triS) * 0.55 - (o.nameDy or 0)) end
   if o.hit then o.hit.x, o.hit.y = x, y end
 end
 
@@ -1280,6 +1489,10 @@ B:On("OBG_INIT", function() TM:Build() end)
 B:On("OBG_ZONE", function()
   TM.pan = nil
   TM.vx = nil
+end)
+-- the plaque names the zone you are in
+B:On("ZONE_CHANGED_NEW_AREA", function()
+  if TM.plaqueText and B.db.map.plaque then TM.plaqueText:SetText(GetRealZoneText() or "") end
 end)
 
 function OctoBG_ToggleMap()

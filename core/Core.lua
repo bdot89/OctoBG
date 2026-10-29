@@ -12,7 +12,7 @@
 OctoBG = {}
 local B = OctoBG
 
-B.VERSION = "2.3.1"
+B.VERSION = "2.3.2"
 B.env = { superwow = false, nampower = false, unitxp = false, safe = false }
 B.zone = nil        -- "WSG", "AB", "AV", "TG" (Thorn Gorge), "ARENA" or nil
 B.zoneName = nil
@@ -71,7 +71,10 @@ B.DEFAULTS = {
            tipNear = true, tipAnchor = "ANCHOR_LEFT", distance = true, rate = 4, feedback = true, mode = 1 },
   -- the enemy map; names: none | marked (target, Kill On Sight) | all
   map = { enabled = true, width = 260, enemies = true, dim = 0.3, explore = true, bases = true, worldKey = "game", bigWidth = 720, world = false, zoom = 1, zoomWorld = 3, names = "marked",
-          mouse = true, heading = true, count = true, height = "on", heightStep = 10 },
+          mouse = true, heading = true, count = true, height = "on", heightStep = 10,
+          heightWho = "both", heightStyle = "bars", heightPlace = "side", heightUp = { 1, 1, 1 }, heightDown = { 1, 1, 1 },
+          heightBox = true, heightBoxAt = "BOTTOMLEFT",
+          border = "thin", borderColor = { 0.22, 0.22, 0.25 }, plaque = false },
   stealth = { enabled = true, alert = true, range = 60 },   -- range: alert when they stealth this close (0 = any)
   optAlpha = 0.95,   -- options window background (the slider at its top)
   reach = {},        -- per zone: how far enemies were picked up (Tracker)

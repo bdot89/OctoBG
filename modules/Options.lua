@@ -234,18 +234,44 @@ BUILD.map = function(p)
   Chk(p, "Hover and click enemies", "Hover an enemy to see who it is, click to target them. Off: clicks go through the map to the game.", M, "mouse", MapLayout)
   Chk(p, "Enemy count under it", "A line under the map: how many enemies it shows and where the enemy flag carrier is.", M, "count")
   Drop(p, "Names", "Small names under the triangles: none, only your target and Kill On Sight, or everyone.", MAP_NAMES, M, "names")
-  W.Check(p, "Height bars", "Small white bars ABOVE a marker when that player is higher than you (a roof, a hill), "
-    .. "BELOW it when lower - one bar, two from double the distance, three from four times. Anywhere, for enemies, your "
-    .. "team and both flag carriers; the count line adds \"3 above, 2 below\". Only for players your own client sees.",
-    function() return (B.db.map.height or "on") ~= "off" end, function(v) B.db.map.height = v and "on" or "off" end)
-  Sld(p, "...from", "How much higher or lower before a bar shows - a few yards of slope never count.", 5, 30, 1, M,
-    "heightStep", nil, function(v) return v .. " yd" end)
   W.Space(p, 2)
   Chk(p, "Base circles", "Battlegrounds: a circle round every base (Arathi Basin nodes, Warsong Gulch flag rooms) with a "
     .. "label - \"ST 3 +2\" = 3 enemies there, 2 running in. Click the label to post \"3 AT STABLES\", right-click it to "
     .. "pick the base on the INC bar.", M, "bases")
   Chk(p, "Whole zone uncovered", "Draws every part of the zone map as if you had explored it all - every zone, OctoWoW's new ones too (from the game's own map data).",
     M, "explore", MapLayout)
+  W.Card(p, "Height: above or below you", { text = "A small mark by a player who is higher (a roof, a hill) or lower "
+    .. "than you, and a box on the map with how many enemies are above and below." })
+  local function Redraw() if B.TacMap and B.TacMap.frame and B.TacMap.frame:IsShown() then B.TacMap:Update() end end
+  local function Col(key)
+    return function() local c = B.db.map[key] return c[1], c[2], c[3] end,
+           function(r, g, b) B.db.map[key] = { r, g, b } Redraw() end
+  end
+  W.Check(p, "Height marks", "Only for players your own client sees (height is not shared by teammates).",
+    function() return (B.db.map.height or "on") ~= "off" end, function(v) B.db.map.height = v and "on" or "off" Redraw() end)
+  Drop(p, "On whom", nil, { { key = "both", label = "Enemies and my team" }, { key = "enemies", label = "Enemies only" },
+    { key = "friends", label = "My team only" } }, M, "heightWho", Redraw)
+  Drop(p, "Look", "Bars: one, two or three (more = further). Yards: \"+15\". Signs: + ++ +++ / - -- ---.",
+    { { key = "bars", label = "Small bars" }, { key = "number", label = "Yards (+15 / -22)" },
+      { key = "signs", label = "Signs (+ ++ / - --)" } }, M, "heightStyle", Redraw)
+  Drop(p, "Where on the marker", "Beside it keeps them clear of the names under the markers.",
+    { { key = "side", label = "Right side (higher top, lower bottom)" }, { key = "left", label = "Left side" },
+      { key = "stack", label = "Above / below the marker" } }, M, "heightPlace", Redraw)
+  local gu, su = Col("heightUp")
+  W.Color(p, "Colour when higher", nil, gu, su)
+  local gd, sd = Col("heightDown")
+  W.Color(p, "Colour when lower", nil, gd, sd)
+  Sld(p, "Show from", "How much higher or lower before a mark shows - a few yards of slope never count. Two marks "
+    .. "from double this, three from four times.", 5, 30, 1, M, "heightStep", nil, function(v) return v .. " yd" end)
+  Chk(p, "Above / below box on the map", "A small box: how many enemies in sight are higher and lower than you.", M,
+    "heightBox", Redraw)
+  Drop(p, "Box in the corner", nil, { { key = "BOTTOMLEFT", label = "Bottom left" }, { key = "BOTTOMRIGHT", label = "Bottom right" },
+    { key = "TOPLEFT", label = "Top left" }, { key = "TOPRIGHT", label = "Top right" } }, M, "heightBoxAt", Redraw)
+  W.Card(p, "Map look", { text = "The frame round the map, in the game's own art." })
+  Drop(p, "Border", nil, B.TacMap.BORDERS, M, "border", MapLayout)
+  W.Color(p, "Border colour", "For the line, tooltip and solid borders.", function() local c = B.db.map.borderColor return c[1], c[2], c[3] end,
+    function(r, g, b) B.db.map.borderColor = { r, g, b } MapLayout() end)
+  Chk(p, "Title plaque with the zone's name", "The stone plaque of the game's windows on top of the map.", M, "plaque", MapLayout)
   W.Card(p, "As your world map", { text = "Use this map instead of the game's world map: press M and it opens big in the middle of the screen." })
   Drop(p, "The M key opens", "The game's world map (pfUI's, if pfUI is on), this map big, or nothing at all.",
     { { key = "game", label = "The game's world map" }, { key = "obg", label = "OctoBG's map (big)" },
