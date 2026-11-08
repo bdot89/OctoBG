@@ -19,6 +19,8 @@
 --   C low,spellID,targetLow,enemy     a cast that changed cooldowns / DR / immunity
 --   S low,x,y,spellID                 an enemy went into stealth here
 --   G guid,tenths,x,y                 a spirit guide's next wave in tenths of seconds
+--   D name,damage,healing             a player's totals as this client counted them
+--                                     (Scoreboard.lua keeps the highest count of each)
 -- Everything received is checked (format, ranges, lengths) and kept under the
 -- tracker's own limits. Eviction: users 150 s after their last message, at
 -- most 40; queued events after 4 s; name memory with the tracker unit; all on
@@ -90,7 +92,8 @@ local function Split(s, out)
 end
 
 local function ValidName(s)
-  return s and string.len(s) >= 2 and string.len(s) <= 24 and string.find(s, "^[%a\128-\255]+$") ~= nil
+  -- letters, and a realm on cross-realm names: "Name-NZ"
+  return s and string.len(s) >= 2 and string.len(s) <= 30 and string.find(s, "^[%a\128-\255]+%-?[%a\128-\255]*$") ~= nil
 end
 
 function SY:Me()
@@ -293,7 +296,9 @@ function SY:Guide(g)
   if not self:Sharing() then return end
   local now = GetTime()
   if now - (g.sentAt or 0) < 20 then return end
-  local rem = B.Timers.spirit:Remaining(g, now)
+  local SP = B.Timers.spirit
+  if SP.waveSrc ~= "seen" and SP.waveSrc ~= "area" and not SP.perGuide then return end   -- only real waves travel
+  local rem = SP:Remaining(g, now)
   local hex = type(g.guid) == "string" and string.upper(string.sub(g.guid, 3))
   if not rem or not hex or not string.find(hex, "^F13%x+$") or string.len(hex) ~= 16 then return end
   local wx, wy = U.Position(g.guid)
@@ -364,6 +369,24 @@ local HANDLERS = {}
 HANDLERS.H = function(body, sender)
   Split(body, F)
   SY:Touch(sender, string.sub(F[1] or "", 1, 12), F[2] ~= "0")
+end
+
+HANDLERS.D = function(body, sender)
+  if not B.BGStats then return end
+  for rec in string.gfind(body, "[^;]+") do
+    if Split(rec, F) >= 3 then B.BGStats:Merge(F[1], Num(F[2], 0, 100000000), Num(F[3], 0, 100000000)) end
+  end
+end
+
+-- X name,cleanses,purges,interrupts,cc,taken,biggest hit,biggest heal (the scoreboard's hover panel)
+HANDLERS.X = function(body, sender)
+  if not B.BGStats then return end
+  for rec in string.gfind(body, "[^;]+") do
+    if Split(rec, F) >= 8 then
+      B.BGStats:MergeX(F[1], Num(F[2], 0, 100000), Num(F[3], 0, 100000), Num(F[4], 0, 100000), Num(F[5], 0, 100000),
+                       Num(F[6], 0, 100000000), Num(F[7], 0, 1000000), Num(F[8], 0, 1000000))
+    end
+  end
 end
 
 HANDLERS.P = function(body, sender)

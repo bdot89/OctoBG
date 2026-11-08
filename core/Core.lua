@@ -12,7 +12,7 @@
 OctoBG = {}
 local B = OctoBG
 
-B.VERSION = "2.3.2"
+B.VERSION = "2.4.0"
 B.env = { superwow = false, nampower = false, unitxp = false, safe = false }
 B.zone = nil        -- "WSG", "AB", "AV", "TG" (Thorn Gorge), "ARENA" or nil
 B.zoneName = nil
@@ -51,6 +51,7 @@ BINDING_NAME_OCTOBG_IGNORE = "Ignore: add / remove your target"
 BINDING_NAME_OCTOBG_NEARBY = "Post the nearby enemy count"
 BINDING_NAME_OCTOBG_INTERACT = "Interact: nearest NPC or object (returns / picks up a flag)"
 BINDING_NAME_OCTOBG_AVMODE = "AV mode on / off (nameplates for enemy players only)"
+BINDING_NAME_OCTOBG_SCOREBOARD = "Scoreboard (damage, healing, kills: this game or the last)"
 
 B.DEFAULTS = {
   locked = true,
@@ -307,7 +308,9 @@ end)
 -- name's row) and teammates are the raid; B.faction / B.enemy follow it and
 -- OBG_TEAM fires when it changes. Outside battlegrounds: the character's own.
 B.scoreSide = {}   -- name -> "Horde" / "Alliance" from the scoreboard (cleared on zone change)
+B.scoreShort = {}  -- the same by "Name" without a realm, when only one row has it
 B.raidGuid = {}    -- GUID -> true for raid / party members (rebuilt on roster changes)
+B.raidName = {}    -- their names, with and without a realm
 
 function B:SetTeam(fac)
   if not fac then return end
@@ -317,31 +320,68 @@ function B:SetTeam(fac)
   if changed and self.db then self:Fire("OBG_TEAM", fac) end
 end
 
+-- The scoreboard's row names the team a player plays for, whatever their race; a
+-- row that disagrees with the raid is overruled: the raid IS our team. Lists can
+-- name someone "Name-NZ" or "Name": a short name counts only when one row has it,
+-- so two players of one name on different realms are never mixed up.
 function B:ReadScore()
+  local Short = B.U.ShortName
   local me = UnitName("player")
   local n = GetNumBattlefieldScores and GetNumBattlefieldScores() or 0
+  local same = {}
+  for i = 1, n do
+    local name = GetBattlefieldScore(i)
+    if name then
+      local s = Short(name)
+      same[s] = (same[s] or 0) + 1
+    end
+  end
   for i = 1, n do
     local name, _, _, _, _, fac = GetBattlefieldScore(i)
-    if name then
+    if name and (name == me or (Short(name) == me and same[me] == 1)) then
       local side = (fac == 0) and "Horde" or ((fac == 1) and "Alliance" or nil)
-      self.scoreSide[name] = side
-      if name == me and side and self:IsBG() and side ~= self.faction then
+      if side and self:IsBG() and side ~= self.faction then
         self:SetTeam(side)
         if side ~= self.home then B:Print("cross-faction battleground: you play for the |cffffd100" .. side .. "|r here") end
       end
     end
   end
+  self.scoreShort = {}
+  for i = 1, n do
+    local name, _, _, _, _, fac = GetBattlefieldScore(i)
+    if name then
+      local side = (fac == 0) and "Horde" or ((fac == 1) and "Alliance" or nil)
+      local s = Short(name)
+      if self:IsBG() and self.faction and (self.raidName[name] or (same[s] == 1 and self.raidName[s])) then
+        side = self.faction
+      end
+      self.scoreSide[name] = side
+      if same[s] == 1 then self.scoreShort[s] = side end
+    end
+  end
+end
+
+-- The team a name plays for here: from the scoreboard, whichever way it's written.
+function B:TeamOf(name)
+  if not name then return nil end
+  return self.scoreSide[name] or (self.scoreShort and self.scoreShort[B.U.ShortName(name)]) or nil
 end
 
 function B:ReadRaid()
-  local t = {}
+  local t, names = {}, {}
   local function Add(unit)
     local g = B.U.GuidOf(unit)
     if g then t[g] = true end
+    local n = UnitName(unit)
+    if n then
+      names[n] = true
+      names[B.U.ShortName(n)] = true
+    end
   end
   for i = 1, GetNumRaidMembers() do Add("raid" .. i) end
   for i = 1, GetNumPartyMembers() do Add("party" .. i) end
-  self.raidGuid = t
+  self.raidGuid, self.raidName = t, names
+  if next(self.scoreSide) then self:ReadScore() end
   self:Fire("OBG_TEAM", self.faction)
 end
 
@@ -349,7 +389,7 @@ end
 function B:SideOf(guid, name)
   if guid and self.raidGuid[guid] then return "friend" end
   name = name or (guid and B.U.GuidExists(guid) and UnitName(guid))
-  local s = name and self.scoreSide[name]
+  local s = self:TeamOf(name)
   if s then return (s == self.faction) and "friend" or "enemy" end
   return nil
 end
@@ -358,7 +398,7 @@ B:On("UPDATE_BATTLEFIELD_SCORE", function() B:ReadScore() end)
 B:On("RAID_ROSTER_UPDATE", function() B:ReadRaid() end)
 B:On("PARTY_MEMBERS_CHANGED", function() B:ReadRaid() end)
 B:On("OBG_ZONE", function(ev, z)
-  B.scoreSide = {}
+  B.scoreSide, B.scoreShort = {}, {}
   if not B:IsBG() then
     B:SetTeam(B.home or UnitFactionGroup("player"))
   else
@@ -371,7 +411,7 @@ end)
 B:Every(2, function()
   if not B:IsBG() or (B.teamAsk or 99) >= 15 then return end
   local me = UnitName("player")
-  if B.scoreSide[me] then
+  if B:TeamOf(me) then
     B.teamAsk = 99
     return
   end

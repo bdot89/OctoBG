@@ -199,6 +199,11 @@ function T:FindByName(name)
       return v
     end
   end
+  -- "Name-NZ" here, "Name" there
+  local short = U.ShortName(name)
+  for _, v in pairs(self.units) do
+    if v.name and U.ShortName(v.name) == short then return v end
+  end
   return nil
 end
 

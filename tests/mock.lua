@@ -286,14 +286,17 @@ function GetMapLandmarkInfo() return nil end
 function GetNumBattlefieldScores() return table.getn(Mock.scores) end
 function GetBattlefieldScore(i)
   local s = Mock.scores[i]
-  return s[1], 0, 0, 0, 0, s[2], 0, 0, s[3]
+  return s[1], s[4] or 0, s[5] or 0, s[6] or 0, s[7] or 0, s[2], 0, s[8], s[3]
 end
 function RequestBattlefieldScoreData() end
 function GetNumBattlefieldFlagPositions() return 0 end
 function GetBattlefieldFlagPosition() return nil end
 function GetAreaSpiritHealerTime() return 0 end
-function GetNumWorldStateUI() return 0 end
-function GetWorldStateUIInfo() return nil end
+function GetNumWorldStateUI() return table.getn(Mock.states or {}) end
+function GetWorldStateUIInfo(i) local s = (Mock.states or {})[i] if s then return 1, s[1], s[2] end end
+function GetBattlefieldWinner() return Mock.winner end
+function GetBattlefieldInstanceRunTime() return Mock.runtime or 0 end
+function GetNumBattlefieldStats() return 0 end
 function GetNampowerVersion() return 3, 1, 0 end
 SUPERWOW_VERSION = "1.5"
 function SpellInfo(id) return "Spell" .. tostring(id), "", "Interface\\Icons\\Spell" end
@@ -369,6 +372,7 @@ function GetUnitField(g, key)
   if key == "health" then return e.hp end
   if key == "maxHealth" then return 100 end
   if key == "aura" then return e.auras or {} end
+  if key == "summonedBy" then return e.summonedBy end
   return nil
 end
 function UnitPosition(u)

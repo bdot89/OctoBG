@@ -137,6 +137,13 @@ function U.Time(s)
   return tostring(s)
 end
 
+-- "Name-NZ" -> "Name": cross-realm battlegrounds show a realm on some lists and not others.
+function U.ShortName(n)
+  if not n then return nil end
+  local _, _, s = string.find(n, "^([^%-]+)%-")
+  return s or n
+end
+
 function U.Text(parent, size, font, layer)
   local fs = parent:CreateFontString(nil, layer or "OVERLAY")
   fs:SetFont(font or U.FONT, size or 11, "OUTLINE")
@@ -226,7 +233,7 @@ function U.Panel(name, key, label, w, h, defPoint, defX, defY)
   hd:EnableMouse(true)
   hd:EnableMouseWheel(true)
   hd.text = U.Text(hd, 11)
-  if h >= 60 then hd.text:SetPoint("TOP", hd, "TOP", 0, -4) else hd.text:SetPoint("CENTER", hd, "CENTER", 0, 0) end
+  hd.text:SetPoint("BOTTOM", hd, "TOP", 0, 2)     -- above the box, never over what it holds
   hd.text:SetText(f.label)
   hd.panel = f
   hd:SetScript("OnMouseDown", function()

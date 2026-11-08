@@ -60,6 +60,8 @@ L.INFO = {
                return B.db.cd.alpha
              end },
   focus = { page = "focus", on = function() return B.db.focus.strip end, set = function(v) B.db.focus.strip = v end },
+  score = { page = "score", on = function() return B.db.bgscore.enabled end,
+            set = function(v) B.db.bgscore.enabled = v end },
   avbutton = { page = "tidy", on = function() return B.db.avmode.button end,
                set = function(v)
                  B.db.avmode.button = v

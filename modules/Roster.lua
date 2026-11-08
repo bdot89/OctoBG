@@ -130,8 +130,11 @@ function R:CollectRoster(now)
   local enemyFac = (B.faction == "Horde") and 1 or 0     -- scoreboard: 0 Horde, 1 Alliance
   for i = 1, GetNumBattlefieldScores() do
     local name, _, _, _, _, fac, _, _, class = GetBattlefieldScore(i)
-    if name and fac == enemyFac and not inScore[name] then
+    local team = name and B:TeamOf(name)
+    local isEnemy = team and (team == B.enemy) or (not team and fac == enemyFac)
+    if name and isEnemy and not inScore[name] then
       inScore[name] = true
+      inScore[U.ShortName(name)] = true
       n = n + 1
       local e = self:Entry(n, name)
       e.class = U.ClassToken(class)
@@ -139,7 +142,7 @@ function R:CollectRoster(now)
     end
   end
   for _, u in pairs(T.units) do
-    if u.name and not inScore[u.name] then
+    if u.name and not inScore[u.name] and not inScore[U.ShortName(u.name)] then
       n = n + 1
       local e = self:Entry(n, u.name)
       self:Fill(e, u, now)

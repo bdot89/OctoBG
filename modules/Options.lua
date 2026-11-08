@@ -954,6 +954,69 @@ BUILD.interact = function(p)
     .. "3. Open |cffffd100dlls.txt|r in that folder and add a last line: Interact.dll\n"
     .. "4. Restart the game. The line above turns green.", 0, true)
 end
+BUILD.score = function(p)
+  local function SC() return B.db.bgscore end
+  local function BO() return B.db.board end
+  local function Restyle() if B.BGScore then B.BGScore:Restyle() end end
+  W.Heading(p, "Score and scoreboard", {
+    text = "A framed panel with the game's time and score, who wins and when - and a full scoreboard with damage and healing.",
+    about = "Arathi Basin's prediction is worked out from the game's own tick table and the bases being captured, so it "
+      .. "changes the moment the score or a base does, and counts down smoothly. Click it, or a base, to say it in /bg." })
+  W.Card(p, "Score panel", { text = "Shows in battlegrounds. Move and size it with Move frames at the top." })
+  Chk(p, "Show the score panel", nil, SC, "enabled")
+  W.Check(p, "Hide the game's score frame", "The panel shows the same and more. Untick to bring the game's back.",
+    function() return B.db.tidy.scoreFrame end, function(v)
+      B.db.tidy.scoreFrame = v
+      if B.BGTidy then B.BGTidy:ScoreFrame() end
+    end)
+  Chk(p, "Who wins and when", "Arathi Basin: \"Horde wins in 6:03 (2000 to 1430)\".", SC, "predict", Restyle)
+  Chk(p, "The five bases", "Arathi Basin: a row of bases with their capture timers. On: the Timers panel leaves them out.", SC, "nodes", Restyle)
+  Chk(p, "Flag carriers in this panel", "Warsong Gulch: both carriers under the score, with health, place, time held and Focused Assault stacks. Off: they get their own window.", SC, "carriers", Restyle)
+  Chk(p, "Time", "Since the battle began (or until it starts).", SC, "time")
+  Chk(p, "Graveyard timer", "Along the bottom: the next resurrection wave. It is one timer for the whole battleground, "
+    .. "known from the game's clock with no graveyard in sight; a real heal or a spirit healer's timer locks it on.", SC, "graveyard", Restyle)
+  W.Card(p, "Score panel look", { text = "The frame and the picture behind it." })
+  Drop(p, "Frame", nil, W.FRAMES, SC, "border", Restyle)
+  W.Color(p, "Frame colour", "For the tooltip, solid and thin frames.", function() local c = B.db.bgscore.borderColor return c[1], c[2], c[3] end,
+    function(r, g, b) B.db.bgscore.borderColor = { r, g, b } Restyle() end)
+  Drop(p, "Behind it", nil, B.BGScore.ARTS, SC, "art", Restyle)
+  Sld(p, "Darken", "How dark the map is behind the text.", 0, 0.95, 0.05, SC, "dark", Restyle, Pct)
+  Chk(p, "Title plaque with the battleground's name", nil, SC, "plaque", Restyle)
+  Sld(p, "Width", nil, 220, 460, 10, SC, "width", Restyle, function(v) return v .. " px" end)
+  W.Card(p, "Scoreboard", { text = "Kills, deaths, honor, flag captures, damage and healing for both teams, in a table you can sort." })
+  W.Buttons(p, { { "Open it", function() B.Scoreboard:Toggle() end, 90, "This game's, or the last game's after you leave." } })
+  Chk(p, "Open when the game ends", nil, BO, "auto")
+  Chk(p, "Use it instead of the game's", "The game's scoreboard key opens this one, and the game's end frame stays away. Its window has a button to the game's own.", BO, "replace")
+  W.KeyBind(p, "Key", "Opens and closes the scoreboard.", "OCTOBG_SCOREBOARD")
+  Chk(p, "Group by team", "Each team under its own heading with its totals, sorted within the team. Off: everyone sorted together, each row still in its team's colour.",
+    BO, "group", function() if B.Scoreboard then B.Scoreboard:Refresh() end end)
+  Sld(p, "Rows shown", nil, 10, 30, 1, BO, "rows", function() if B.Scoreboard then B.Scoreboard:Refresh() end end)
+  Chk(p, "Short numbers", "123.4k instead of 123456 (hover a row for the exact ones).", BO, "shortNumbers")
+  W.Sub(p, "Scoreboard look")
+  W.Note(p, "Each battleground has its own map, emblem and colour. See them here with sample players:")
+  W.Buttons(p, {
+    { "Warsong Gulch", function() B.Scoreboard:Preview("WSG") end, 104 },
+    { "Arathi Basin", function() B.Scoreboard:Preview("AB") end, 96 },
+    { "Alterac Valley", function() B.Scoreboard:Preview("AV") end, 104 },
+    { "Thorn Gorge", function() B.Scoreboard:Preview("TG") end, 92 },
+  })
+  local function BoardRefresh() if B.Scoreboard then B.Scoreboard:Refresh() end end
+  Sld(p, "Darken the map", "Behind the table.", 0.2, 0.9, 0.05, BO, "dark", BoardRefresh, Pct)
+  Drop(p, "Headings font", nil, B.SpyData.Fonts(), BO, "fontHead", BoardRefresh)
+  Drop(p, "Names font", nil, B.SpyData.Fonts(), BO, "fontName", BoardRefresh)
+  Drop(p, "Numbers font", nil, B.SpyData.Fonts(), BO, "fontNum", BoardRefresh)
+  W.Sub(p, "Columns shown")
+  for _, c in ipairs({ { "kb", "Killing blows" }, { "hk", "Honorable kills" }, { "deaths", "Deaths" }, { "honor", "Honor" },
+                       { "damage", "Damage" }, { "healing", "Healing" } }) do
+    local key = c[1]
+    W.Check(p, c[2], nil, function() return not B.db.board.hide[key] end, function(v)
+      B.db.board.hide[key] = (not v) or nil
+      if B.Scoreboard then B.Scoreboard:Refresh() end
+    end)
+  end
+  W.Note(p, "In the table: click a heading to sort, right-click to move it right, Shift + right-click to move it left.")
+end
+
 BUILD.tidy = function(p)
   local BT = B.BGTidy
   local function TD() return B.db.tidy end
@@ -1194,6 +1257,7 @@ O.SECTIONS = {
   { nil, "Setup" },
   { "general", "General" },
   { "interact", "Interact key" },
+  { "score", "Score and scoreboard" },
   { "tidy", "Clean screen, AV mode" },
 }
 

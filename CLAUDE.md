@@ -1,5 +1,87 @@
 # OctoBG - notes for Claude Code
 
+## Map circles cut at the map edge (31 Oct 2026)
+- User (WSG screenshot, zoomed map, the MID base circle drawn far over the game world): "stop this".
+  Textures are not clipped by their frame here. `TM:PinRound(t, mx, my, size)` sizes and crops a
+  round texture (SetTexCoord) to the view; used by base circles (DrawBases) and stealth
+  "could be this far" circles (DrawStealth, Repin via `area.roundS`). Not seen in game yet.
+
+## Score panel, exact AB prediction, scoreboard (6 Nov 2026)
+- User: art frames round the time and score (WSG showed no score), "in AB the timers are not accurate
+  they should update INSTANTLY", who wins and how long, customizable; own end-of-game scoreboard with
+  damage and healing, sortable and reorderable, "highly accurate for both teams".
+- Timers.lua: world states read on UPDATE_WORLD_STATES (bgOnly) as well as each second, in every
+  zone (`TM.score`, other lines in `TM.extra`). The old prediction measured a rate for 8+ s after
+  every base change. `TM:Predict` now plays the game forward from each side's last tick (`p.tickAt`):
+  `TM.AB_TICKS` from vmangos (BG_AB_TickIntervals / TickPoints, NOT confirmed on OctoWoW), bases being
+  captured flip at their `ends`; result `TM.pred = { winner, at, score, max }`, an absolute moment that
+  panels count down to. Two equal ticks in a row unlike the table are saved to `db.abTicks[bases]`.
+- modules/BGScore.lua: U.Panel "score"; `W.ArtFrame` (Widgets.lua; style list W.FRAMES), the BG's map
+  as the picture (`S.MapArt`: the 12 world map tiles, cover + crop; the first version's loading screens
+  were posters with logos, user: "THIS ARTWORK IS MESSY"), dimmer, plaque. Layout by the score itself: max <= 10
+  = "flags" (WSG), else "bars". While it shows, Timers leaves out the resource and base rows
+  (`BGScore:Shows`). Takes over from the game's frame once (`tookOver` sets tidy.scoreFrame).
+- modules/Scoreboard.lua: the server sends no damage / healing (patch-4 WorldStateFrame.lua: only
+  KB, HK, deaths, honor, GetBattlefieldStat*; its TW_BG "S2C_SCOREBOARD" adds only Thorn Gorge's flag
+  caps). Counted from nampower events per name (`BS.totals`), pets via GetUnitField summonedBy /
+  charmedBy / createdBy, unknown GUIDs held in `BS.pending`. SPELL_HEAL_BY_SELF + BY_OTHER only (ON_SELF
+  would double). Healing is raw: 1.12's heal log has no overheal. Sync "D" name,damage,healing: highest
+  count per player wins (`BS:Merge`). Honest limit: a fight out of range of every OctoBG user isn't seen.
+  Window: click heading sorts, right-click moves (Shift: left), db.board.order / hide; last game in
+  db.lastGame; hooks ToggleWorldStateScoreFrame; hides WorldStateScoreFrame at the end while ours is
+  open, with Leave battleground and "The game's own" buttons (Safe UI switches rule).
+- First test (user's screenshots): the board and counting work in a real AB; footer text overlapped; wanted
+  it to show which BG with its own art and better fonts; a graveyard timer; "The game's own" had no way
+  back. Now: window = BG picture on a child frame (THEMES: emblem = the BG's mark icon, accent colour),
+  plaque "<BG> Scoreboard", band with result, time, score + flags, tabs; footer in three lines; fonts
+  db.board.fontHead / fontName / fontNum (BigNoodle, PT Sans Narrow Bold, Expressway), class icons
+  (character create sheet), rank badges, side stripe, column best in gold, bars behind damage / healing;
+  Preview buttons per BG. `BD:GameButton` puts "OctoBG scoreboard" on WorldStateScoreFrame.
+- Second test: window picture = the same `S.MapArt` map tiles (loading screens rejected) with the score on
+  a dark plate; the X hid only the content child, fixed with its own OnClick.
+- Resurrection wave (user: "after a few mins it still says GYs not seen i shouldnt need to see them it
+  should just know"): Timers.lua `S:Global`. One log (Chronicle_<character>_backup_1791399863, AV, one guide):
+  22012 heals are whole waves, 390.5 s / 13 = 30.04 s. 22011 channels restart after a heal, so an idle
+  guide's channel phase is not the wave; that explains the different per-graveyard rows seen earlier.
+  vmangos BattleGround::Update: one m_LastResurrectTime per BG. Hence one clock: waveAt from a heal /
+  GetAreaSpiritHealerTime / team, else GetBattlefieldInstanceRunTime mod 30.04. Panel row always has a
+  time (white = clock, gold = confirmed). Self-check: three heals > 2 s out of phase from different guides
+  set `S.perGuide` = old per-guide timing. `/obg reswave` prints the source and `S.clockErr`.
+  NOT verified: that the instance run time and the server's res timer share a start (one guide's log
+  can't say); the first real heal seen in a game measures it.
+- Third test (user: Flag carriers "UGLY and everything overlaps"; "Why does the board not show clearly who
+  is horde and who is alliance"; "the BGs are xrealm so this needs to be ACCURATE BY TEAM"):
+  `B:TeamOf(name)` (Core.lua): scoreboard row's side, a raid member's row overruled to our team (the raid
+  IS the team), "Name-NZ" and "Name" matched only when one row has that short name (`scoreShort`), so
+  same-named players on two realms never merge. Used by SideOf, Roster, Flags' ScoreClass / RaidUnit,
+  BD:ReadGame, Tracker:FindByName. Sync's ValidName now takes "Name-NZ". Character-faction reads left
+  alone: Cooldowns:516 (spell data), People (out-of-BG Spy layer), Options / Stats (display).
+  Board: `db.board.group` team headings with totals ("HORDE - YOUR TEAM"), whole row tinted by team,
+  5 px edge, team flag on every row; you = gold lines over the tint. `BD.shown` = rows on screen,
+  `BD.list` = players. Flags.lua rebuilt: art / map / frame from db.bgscore (`F:Restyle`, keyed), one line
+  per text cut to fit (`F.Fit`, no wrap width), EFC / FC tag, team tint, health along the bottom edge.
+  Move-box labels sit above the box (Util.lua), all panels.
+- Fourth round (user, screenshot of the two panels stacked): "Merge all this into 1 compact easy to see
+  window", carriers' damage debuff stacks, hover on the scoreboard with "dispells cleanses purges all vital
+  PvP data" "Fast No Lag INSTANT", no team flags on the board. One window: `F:Dock` reparents Flags' rows
+  into the score panel (flags mode, db.bgscore.carriers), `S:RowsKey` re-lays when a flag is taken or
+  returned (at base = 16 px row, carried = 30). `F:Undock` gives the old window back with that panel off.
+  Move-mode sample is now a flag game.
+  Focused Assault, from Spell.dbc (patch-O): 23333 / 23335 flag auras' effect 3 is a periodic trigger
+  (aura 23, amplitude field 96 = 60000, trigger field 111 = 44094); 44094: aura 87 damage taken, base 9 + 1 =
+  10 %, stack 99. `F:Stacks` = floor(held / 60) from the pickup message, corrected by DEBUFF_* events
+  and a 1 s UnitDebuff scan in range. No Chronicle log holds 44094, so the rate is the table's, not seen.
+  Also 56068 "Focused Assault" (50 % + slow, no stacks) exists, only pointed at by item spell 41714: unused.
+  Hover: `BD:RowTip` one frame, 40 reused lines (`BD.tip`), `BS:Detail`. Counted in `BS.x`: SPELL_DISPEL_BY_*
+  (cleanse same team / purge other, by B:SideOf), SPELL_GO_* with `BS:Kind` (interrupt names + target in
+  `BS.casting`, both teams, from UNIT_CASTEVENT: Casts.lua keeps enemies only; DR_SPELLS = cc; hit 0 = not
+  landed), taken, received, biggest, per-spell. Sync "X". Saved in db.lastGame rows as .detail. Not
+  verified in game: SPELL_DISPEL's caster on this server, the order of a kick's SPELL_GO and the cast's FAIL
+  (0.25 s grace), numTargetsHit on stuns.
+- Not verified in game: all of it (mock only); whether OctoWoW uses vmangos' AB ticks; that
+  GetBattlefieldInstanceRunTime counts as expected; how the map picture looks; whether
+  scoreboard names and UnitName carry the same realm suffix (a "Name" fallback is in ReadGame).
+
 ## Cross-faction battlegrounds, height marks (29 Oct 2026)
 - User: cross-faction BGs were just added - "paladins on the horde side look like enemies on the map",
   "it shows our flag carrier as the EFC"; and wanted the Y axis (roof / ground in WSG) shown neatly.

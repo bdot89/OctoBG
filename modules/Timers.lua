@@ -69,11 +69,65 @@ B:On("SPELL_START_OTHER", function(ev, item, spell, caster, target, flags, castT
   if B.Sync then B.Sync:Guide(g) end
 end, true)
 
+-- The resurrection clock. The wave is one timer for the whole battleground, not
+-- one per graveyard: the heal (22012) is what raises the dead, and a user's log
+-- of one guide (AV, 28 Sep 2026) has heals 60.06, 60.10, 120.16 and 150.19 s
+-- apart: whole waves of 30.04 s (the server restarts a 30 s timer on the tick
+-- after it runs out, vmangos BattleGround::Update m_LastResurrectTime). Guides'
+-- channels (22011) run on their own phase when nobody is waiting, which is why
+-- graveyards seemed to differ. That timer starts with the instance, as does
+-- GetBattlefieldInstanceRunTime, so the wave is known with no graveyard in
+-- sight ("clock"), and locks on when one is timed: a spirit healer's own timer
+-- ("area"), a heal seen ("seen") or reported by a teammate ("team").
+-- If two graveyards ever heal out of step, S.perGuide goes back to per-guide
+-- timing. /obg reswave shows how far the clock was from the real heals.
+local PERIOD = 30.04
+
+function S:FromClock()
+  if not B:IsBG() or not GetBattlefieldInstanceRunTime then return nil end
+  local ms = GetBattlefieldInstanceRunTime()
+  if not ms or ms <= 0 then return nil end
+  return PERIOD - math.mod(ms / 1000, PERIOD)
+end
+
+-- A real wave at time t (src: "area", "seen", "team"; g: the guide that healed).
+function S:Confirm(t, src, g)
+  local now = GetTime()
+  local c = self:FromClock()
+  if c and src ~= "team" then
+    -- how far the game clock's guess is from this real wave
+    local e = math.mod(math.abs((now + c) - t), PERIOD)
+    self.clockErr = math.min(e, PERIOD - e)
+  end
+  if g and self.waveGuide and g ~= self.waveGuide and self.waveAt then
+    local e = math.mod(math.abs(t - self.waveAt), PERIOD)
+    if math.min(e, PERIOD - e) > 2 then
+      self.conflicts = (self.conflicts or 0) + 1
+      if self.conflicts >= 3 then self.perGuide = true end
+    end
+  end
+  self.waveAt, self.waveSrc = t, src
+  if g then self.waveGuide = g end
+end
+
+-- Seconds to the next wave, or nil; S.perGuide: nil, each guide has its own.
+function S:Global(now)
+  if self.perGuide then return nil end
+  if self.waveAt then
+    local d = now - self.waveAt
+    if d < 0 then return -d end
+    return PERIOD - math.mod(d, PERIOD)
+  end
+  return self:FromClock()
+end
+
 B:On("SPELL_GO_OTHER", function(ev, item, spell, caster)
   if spell ~= SPIRIT_HEAL then return end
   local g = Guide(caster)
   if not g then return end
-  g.anchor, g.localAt = GetTime(), GetTime()
+  local now = GetTime()
+  g.anchor, g.localAt = now, now
+  S:Confirm(now, "seen", g)
   if B.Sync then B.Sync:Guide(g) end
 end, true)
 
@@ -86,9 +140,12 @@ function S:Team(guid, remaining, x, y)
   if g.localAt and now - g.localAt < 40 then return end
   g.anchor = now + remaining
   if x and not U.GuidExists(guid) then g.x, g.y = x, y end
+  if self.waveSrc ~= "area" and self.waveSrc ~= "seen" then self:Confirm(now + remaining, "team") end
 end
 
 function S:Remaining(g, now)
+  local r = self:Global(now)
+  if r then return r end
   if not g.anchor then return nil end
   local d = now - g.anchor
   if d < 0 then return -d end
@@ -141,6 +198,7 @@ B:On("AREA_SPIRIT_HEALER_IN_RANGE", function()
   local t = GetAreaSpiritHealerTime and GetAreaSpiritHealerTime()
   if t and t > 0 then
     S.areaWave = GetTime() + t
+    S:Confirm(S.areaWave, "area")
     local g = S:Nearest()
     if g then g.anchor = S.areaWave end
   end
@@ -151,6 +209,8 @@ B:On("AREA_SPIRIT_HEALER_OUT_OF_RANGE", function() S.areaWave = nil end, true)
 -- Seconds until the player's next resurrection wave, or nil.
 function S:MyWave(now)
   if self.areaWave and self.areaWave > now then return self.areaWave - now end
+  local r = self:Global(now)
+  if r then return r end
   local g = self:Nearest()
   if g then return self:Remaining(g, now) end
   return nil
@@ -160,6 +220,8 @@ end
 -- "dead - res N"; exact in WSG, the soonest graveyard elsewhere), or nil.
 function S:NextWave(faction, now)
   now = now or GetTime()
+  local r = self:Global(now)
+  if r then return r end
   local best
   for _, g in pairs(self.guides) do
     if g.faction == faction then
@@ -200,11 +262,13 @@ end
 function O:Contest(name, by, dur)
   local n = self:Node(name)
   n.by, n.dur, n.ends = by, dur, GetTime() + dur
+  if B.zone == "AB" then TM:Predict(GetTime()) end
 end
 
 function O:Own(name, owner)
   local n = self:Node(name)
   n.owner, n.by, n.ends = owner, nil, nil
+  if B.zone == "AB" then TM:Predict(GetTime()) end
 end
 
 -- "begins in 1 minute" / "begins in 30 seconds" / AV: "1 minute until the battle..."
@@ -218,7 +282,7 @@ local function StartCountdown(low)
     return true
   end
   if string.find(low, "has begun", 1, true) then
-    O.start = nil
+    O.start, O.begunAt = nil, GetTime()
     return true
   end
   return false
@@ -287,41 +351,137 @@ B:On("CHAT_MSG_MONSTER_YELL", OnYell, true)
 
 -- ---------------------------------------------------------------- AB prediction
 
--- The world state lines read like "Bases: 3  Resources: 1450/2000". The rate
--- is measured from the numbers since the base count last changed, so no tick
--- table has to be assumed.
+-- The world state lines read like "Bases: 3  Resources: 1450/2000" (Warsong
+-- Gulch: "2/3"; Alterac Valley: "Reinforcements: 412"). They are read the
+-- moment the server changes them (UPDATE_WORLD_STATES), so scores are instant.
+--
+-- Who wins and when is worked out, not measured: the server adds points on a
+-- fixed tick per number of bases (vmangos BG_AB_TickIntervals / TickPoints: 1
+-- base 10 per 12 s, 2: 10 per 9 s, 3: 10 per 6 s, 4: 10 per 3 s, 5: 30 per 1 s).
+-- TM:Predict plays the game forward from the last tick, with every base still
+-- being captured flipping when its timer ends, and gives an exact moment
+-- (pred.at), which the panels count down to every frame. If this server ticks
+-- differently, two equal ticks in a row replace the table (db.abTicks).
 local P = { Alliance = {}, Horde = {} }
 TM.score = P
+TM.extra = {}     -- world state lines that are not a score
+TM.AB_TICKS = { { 10, 12 }, { 10, 9 }, { 10, 6 }, { 10, 3 }, { 30, 1 } }
+
+function TM:Tick(bases)
+  local learned = B.db.abTicks and B.db.abTicks[bases]
+  return learned or self.AB_TICKS[bases]
+end
+
+-- Two ticks in a row with the same size and spacing, not what the table says: learn them.
+local function Learn(p, bases, d, dt)
+  if not bases or bases < 1 or bases > 5 or p.basesAt == nil then return end
+  if p.lastD == d and p.lastDt and math.abs(p.lastDt - dt) < 0.6 and p.lastB == bases and dt >= 0.5 and dt <= 30 then
+    local t = TM:Tick(bases)
+    if t[1] ~= d or math.abs(t[2] - dt) > 0.75 then
+      B.db.abTicks = B.db.abTicks or {}
+      B.db.abTicks[bases] = { d, math.floor(dt * 10 + 0.5) / 10 }
+    end
+  end
+  p.lastD, p.lastDt, p.lastB = d, dt, bases
+end
 
 function O:ScoreTick()
-  if B.zone ~= "AB" or not GetNumWorldStateUI then return end
+  if not B.zone or not GetNumWorldStateUI then return end
   local now = GetTime()
+  local shown = 0
+  local extra = {}
   for i = 1, GetNumWorldStateUI() do
-    local _, text, icon = GetWorldStateUIInfo(i)
-    local _, _, cur, max
-    if text then _, _, cur, max = string.find(text, "(%d+)/(%d+)") end
-    if cur then
-      local li = string.lower(icon or "")
-      local fac
-      if string.find(li, "alliance", 1, true) then fac = "Alliance"
-      elseif string.find(li, "horde", 1, true) then fac = "Horde"
-      else fac = (i == 1) and "Alliance" or "Horde" end
-      local _, _, bases = string.find(text, "[Bb]ases:?%s*(%d+)")
-      local p = P[fac]
-      cur, max = tonumber(cur), tonumber(max)
-      if bases ~= p.bases or (p.cur and cur < p.cur) then
-        p.bases, p.t0, p.r0 = bases, nil, nil
-      end
-      if not p.t0 then p.t0, p.r0 = now, cur end
-      if cur ~= p.cur then p.cur, p.t1 = cur, now end
-      p.max = max
-      if p.t1 and p.t1 - p.t0 >= 8 and cur > p.r0 then
-        p.rate = (cur - p.r0) / (p.t1 - p.t0)
+    local state, text, icon = GetWorldStateUIInfo(i)
+    if text and text ~= "" and (not state or state > 0) then
+      shown = shown + 1
+      local _, _, cur, max = string.find(text, "(%d+)/(%d+)")
+      if not cur then _, _, cur = string.find(text, "[Rr]einforcements:?%s*(%d+)") end
+      if cur then
+        local li = string.lower(icon or "")
+        local fac
+        if string.find(li, "alliance", 1, true) then fac = "Alliance"
+        elseif string.find(li, "horde", 1, true) then fac = "Horde"
+        else fac = (shown == 1) and "Alliance" or "Horde" end
+        local _, _, bases = string.find(text, "[Bb]ases:?%s*(%d+)")
+        bases = tonumber(bases)
+        local p = P[fac]
+        cur, max = tonumber(cur), tonumber(max)
+        if p.cur and cur < p.cur and max then p.tickAt, p.lastD, p.lastDt = nil, nil, nil end   -- a new game
+        if p.cur and cur > p.cur and p.tickAt and bases == p.bases then
+          Learn(p, bases, cur - p.cur, now - p.tickAt)
+        elseif bases ~= p.bases then
+          p.lastD, p.lastDt = nil, nil
+        end
+        if cur ~= p.cur or not p.tickAt then p.tickAt = now end
+        if bases ~= p.bases then p.basesAt = now end
+        p.cur, p.bases, p.max = cur, bases, max or p.max
       else
-        p.rate = nil
+        table.insert(extra, text)
       end
     end
   end
+  TM.extra = extra
+  if B.zone == "AB" then TM:Predict(now) end
+end
+
+-- Plays Arathi Basin forward. pred = { winner, at (GetTime of the win), score
+-- (the loser's points then), others = { [fac] = when that side reaches the
+-- end } } or nil when nobody is scoring.
+function TM:Predict(now)
+  local A, H = P.Alliance, P.Horde
+  self.pred = nil
+  A.eta, H.eta = nil, nil
+  if not A.cur or not H.cur then return end
+  local max = A.max or H.max or 2000
+  local sim = {}
+  for fac, p in pairs(P) do
+    sim[fac] = { cur = p.cur, bases = p.bases or 0, last = p.tickAt or now, fac = fac }
+  end
+  local caps = {}
+  for _, n in pairs(O.nodes) do
+    if n.ends and n.ends > now and n.by and sim[n.by] then table.insert(caps, { t = n.ends, by = n.by }) end
+  end
+  table.sort(caps, function(a, b) return a.t < b.t end)
+  local nextCap = 1
+  local t = now
+  local pred
+  for _ = 1, 2000 do
+    -- the earliest thing to happen: a base flipping, or a side's next tick
+    local at, who = nil, nil
+    for fac, s in pairs(sim) do
+      local k = (s.bases > 0) and self:Tick(math.min(s.bases, 5))
+      if k and not s.done then
+        local due = math.max(t, s.last + k[2])
+        if not at or due < at then at, who = due, s end
+      end
+    end
+    local cap = caps[nextCap]
+    if cap and (not at or cap.t <= at) then
+      t = cap.t
+      local s = sim[cap.by]
+      if s.bases == 0 then s.last = t end    -- a side with no base starts counting now
+      s.bases = s.bases + 1
+      nextCap = nextCap + 1
+    elseif at then
+      t = at
+      local k = self:Tick(math.min(who.bases, 5))
+      who.cur = who.cur + k[1]
+      who.last = t
+      if who.cur >= max then
+        who.done = true
+        P[who.fac].eta = t - now
+        if not pred then
+          local other = sim[(who.fac == "Alliance") and "Horde" or "Alliance"]
+          pred = { winner = who.fac, at = t, score = other.cur, max = max }
+        end
+        local other = sim[(who.fac == "Alliance") and "Horde" or "Alliance"]
+        if other.done or other.bases == 0 then break end
+      end
+    else
+      break
+    end
+  end
+  self.pred = pred
 end
 
 -- ---------------------------------------------------------------- rows
@@ -358,7 +518,9 @@ function TM:Collect(now)
     e.say = "Battle begins in " .. Words(O.start - now)
   end
 
-  if B.zone == "AB" then
+  if B.zone == "AB" and B.BGScore and B.BGScore:Shows("nodes") then
+    -- the score panel's base row has these
+  elseif B.zone == "AB" then
     for i = 1, table.getn(AB_NODES) do
       local name = AB_NODES[i]
       local node = O.nodes[name]
@@ -393,29 +555,19 @@ function TM:Collect(now)
     end
   end
 
-  if B.db.timers.predict and B.zone == "AB" then
-    local best, bestT
-    for fac, p in pairs(P) do
-      if p.rate and p.rate > 0 and p.max then
-        p.eta = (p.max - p.cur) / p.rate
-        if not bestT or p.eta < bestT then best, bestT = fac, p.eta end
-      else
-        p.eta = nil
-      end
-    end
+  if B.db.timers.predict and B.zone == "AB" and not (B.BGScore and B.BGScore:Shows("predict")) then
+    local pr = self.pred
     for _, fac in ipairs({ "Alliance", "Horde" }) do
       local p = P[fac]
       if p.cur then
         n = n + 1
         e = Entry(n)
         e.icon, e.label = U.FLAG[fac], p.cur .. "/" .. (p.max or "?")
-        e.text = p.eta and ((fac == best and "wins " or "") .. U.Time(p.eta)) or ""
+        local wins = pr and pr.winner == fac
+        e.text = wins and ("wins " .. U.Time(pr.at - now)) or ""
         e.value, e.color = p.cur / (p.max or 2000), U.FACTION[fac]
-        local other = P[(fac == "Alliance") and "Horde" or "Alliance"]
-        if fac == best and p.eta then
-          e.say = fac .. " wins in " .. Words(p.eta) .. " (" .. p.cur .. " to " .. (other.cur or "?") .. ")"
-        elseif p.eta then
-          e.say = fac .. " " .. e.label .. ", at this pace 2000 in " .. Words(p.eta)
+        if wins then
+          e.say = fac .. " wins in " .. Words(pr.at - now) .. " (" .. pr.max .. " to " .. pr.score .. ")"
         else
           e.say = fac .. " " .. e.label
         end
@@ -423,7 +575,8 @@ function TM:Collect(now)
     end
   end
 
-  if B.db.timers.spirit then
+  -- one wave for the whole game: the score panel's row says it (per graveyard only if they differ)
+  if B.db.timers.spirit and (S.perGuide or not (B.BGScore and B.BGScore:Shows("graveyard"))) then
     local list = {}
     for _, g in pairs(S.guides) do
       if g.anchor then table.insert(list, g) end
@@ -603,15 +756,44 @@ B:Every(0.1, function() TM:Paint(GetTime()) end, true)
 B:Every(1, function()
   local now = GetTime()
   S:Prune(now)
+  -- in a spirit healer's range the game's own timer is exact: keep to it
+  if S.areaWave and GetAreaSpiritHealerTime then
+    local t = GetAreaSpiritHealerTime()
+    if t and t > 0 then
+      S.areaWave = now + t
+      S:Confirm(S.areaWave, "area")
+      local g = S:Nearest()
+      if g then g.anchor = S.areaWave end
+    end
+  end
   O:ScoreTick()
 end, true)
 
 B:On("OBG_INIT", function() TM:Build() end)
 
+B:On("UPDATE_WORLD_STATES", function() O:ScoreTick() end, true)
+
+-- How sure the wave is, and how good the game clock's guess was.
+B:Command("reswave", "the battleground's resurrection wave: how it is known", function()
+  local r = S:Global(GetTime())
+  if S.perGuide then
+    B:Print("res wave: graveyards here heal out of step - timed per graveyard")
+  elseif not r then
+    B:Print("res wave: only known inside a battleground")
+  else
+    B:Print(string.format("res wave: next in %.1f s, from %s", r,
+      (S.waveSrc == "area" and "the spirit healer's timer") or (S.waveSrc == "seen" and "a heal you saw")
+      or (S.waveSrc == "team" and "a teammate's OctoBG") or "the game's clock"))
+    if S.clockErr then B:Print(string.format("the game's clock was %.2f s off the real wave", S.clockErr)) end
+  end
+end)
+
 B:On("OBG_ZONE", function()
   S.guides, S.n, S.areaWave = {}, 0, nil
-  O.nodes, O.start = {}, nil
+  S.waveAt, S.waveSrc, S.waveGuide, S.conflicts, S.perGuide, S.clockErr = nil, nil, nil, nil, nil, nil
+  O.nodes, O.start, O.begunAt = {}, nil, nil
   P.Alliance, P.Horde = {}, {}
+  TM.pred, TM.extra = nil, {}
   TM:Paint(GetTime())
 end)
 

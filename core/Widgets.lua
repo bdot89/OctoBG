@@ -135,6 +135,38 @@ function W.Turn(t, way) U.Rotate(t, TURN[way]) end
 
 -- Game-art backdrops for the other windows: "window" (gold dialog frame),
 -- "dialog" (silver), "panel" (tooltip border, dark inside).
+-- A frame in the game's own art round any panel, in a style the user picks:
+-- an edge on a child frame just outside f and over its contents.
+W.FRAMES = { { key = "gold", label = "Gold frame" }, { key = "stone", label = "Stone frame" },
+             { key = "tooltip", label = "Tooltip edge" }, { key = "solid", label = "Solid frame" },
+             { key = "thin", label = "A thin line" }, { key = "none", label = "None" } }
+local FRAME_EDGE = {   -- file, edge size, how far outside, takes a colour
+  gold = { "Interface\\DialogFrame\\UI-DialogBox-Gold-Border", 32, 10, false },
+  stone = { "Interface\\DialogFrame\\UI-DialogBox-Border", 32, 10, false },
+  tooltip = { "Interface\\Tooltips\\UI-Tooltip-Border", 16, 4, true },
+  solid = { U.WHITE, 3, 3, true },
+  thin = { U.WHITE, 1, 1, true },
+}
+function W.ArtFrame(f, style, c)
+  local e = FRAME_EDGE[style or ""]
+  if not e then
+    if f.artEdge then f.artEdge:Hide() end
+    return
+  end
+  local ed = f.artEdge
+  if not ed then
+    ed = CreateFrame("Frame", nil, f)
+    ed:SetFrameLevel(f:GetFrameLevel() + 6)
+    f.artEdge = ed
+  end
+  ed:ClearAllPoints()
+  ed:SetPoint("TOPLEFT", f, "TOPLEFT", -e[3], e[3])
+  ed:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", e[3], -e[3])
+  ed:SetBackdrop({ edgeFile = e[1], edgeSize = e[2], tile = false, insets = { left = 0, right = 0, top = 0, bottom = 0 } })
+  if e[4] and c then ed:SetBackdropBorderColor(c[1], c[2], c[3], 1) else ed:SetBackdropBorderColor(1, 1, 1, 1) end
+  ed:Show()
+end
+
 function W.Skin(f, kind, alpha)
   if kind == "window" or kind == "dialog" then
     f:SetBackdrop({ bgFile = ART.dialogBg, edgeFile = (kind == "window") and ART.goldBorder or ART.dialogBorder,

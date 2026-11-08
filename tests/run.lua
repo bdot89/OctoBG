@@ -40,7 +40,7 @@ SpyPerCharDB = {
 }
 
 local files = Mock.Load(DIR, "OctoBG.toc")
-ok(table.getn(files) == 32, "32 files in the toc (got " .. table.getn(files) .. ")")
+ok(table.getn(files) == 34, "34 files in the toc (got " .. table.getn(files) .. ")")
 local B = OctoBG
 
 Mock.Fire("ADDON_LOADED", "OctoBG")
@@ -408,15 +408,15 @@ end
 Mock.Fire("UPDATE_BATTLEFIELD_SCORE")
 ok(B.faction == "Alliance" and B.enemy == "Horde", "cross-faction: playing for the Alliance")
 Mock.Fire("CHAT_MSG_BG_SYSTEM_HORDE", "The Alliance flag was picked up by Rogueone!")
-Mock.Fire("CHAT_MSG_BG_SYSTEM_ALLIANCE", "The Horde flag was picked up by Bueno!")
+Mock.Fire("CHAT_MSG_BG_SYSTEM_ALLIANCE", "The Horde flag was picked up by Flagrunner!")
 ok(B.Flags:Enemy() and B.Flags:Enemy().name == "Rogueone", "EFC = the one carrying our flag (" .. tostring(B.Flags:Enemy() and B.Flags:Enemy().name) .. ")")
-ok(B.Flags:Friend() and B.Flags:Friend().name == "Bueno" and not B.Flags:Friend().enemy, "our carrier is not the EFC")
+ok(B.Flags:Friend() and B.Flags:Friend().name == "Flagrunner" and not B.Flags:Friend().enemy, "our carrier is not the EFC")
 -- the side turning mid-game re-judges the carriers
 for i = 1, table.getn(Mock.scores) do
   if Mock.scores[i][1] == "Tester" then Mock.scores[i][2] = 0 end
 end
 Mock.Fire("UPDATE_BATTLEFIELD_SCORE")
-ok(B.Flags:Enemy() and B.Flags:Enemy().name == "Bueno" and B.Flags:Enemy().enemy, "side back to Horde: carriers judged again")
+ok(B.Flags:Enemy() and B.Flags:Enemy().name == "Flagrunner" and B.Flags:Enemy().enemy, "side back to Horde: carriers judged again")
 Mock.Fire("CHAT_MSG_BG_SYSTEM_NEUTRAL", "The flags are now placed at their bases.")
 Mock.units.raid1, Mock.raid = nil, 0
 table.remove(Mock.scores)
@@ -467,7 +467,7 @@ ok(not hb:IsShown(), "nobody above or below: no box")
 -- names in a crowd move apart
 local n1, n2 = B.TacMap:Foe(1), B.TacMap:Foe(2)
 n1.hit, n2.hit = { x = 100, y = 50 }, { x = 104, y = 52 }
-n1.name:SetText("Xilith-NZ") n2.name:SetText("Travis-NZ")
+n1.name:SetText("Plateone-NZ") n2.name:SetText("Platetwo-NZ")
 n1.name:Show() n2.name:Show()
 B.TacMap:SpreadNames(2)
 ok(n1.nameDy == 0 and n2.nameDy >= 10, "two names on one spot: the second moves a line down")
@@ -683,11 +683,342 @@ if bmx then
   Mock.Run(mark.badge, "OnClick", "RightButton")
   ok(B.Incoming.pinned == mark.badge.base.name, "right-click picks it on the INC bar")
   B.Incoming.pinned = nil
+  -- circles are cut off at the map's edge, never drawn over the screen around it
+  TMap:PinRound(mark.ring, 0, 0.5, 100)
+  ok(mark.ring:IsShown() and math.abs(mark.ring:GetWidth() - 50) < 0.01 and math.abs(mark.ring:GetHeight() - 100) < 0.01,
+    "a circle on the map's left edge shows only its right half (" .. tostring(mark.ring:GetWidth()) .. ")")
+  TMap:PinRound(mark.ring, 0.5, 0.5, TMap.w * 3)
+  ok(mark.ring:GetWidth() <= TMap.w + 0.01 and mark.ring:GetHeight() <= TMap.h + 0.01, "a huge circle stays inside the map")
+  TMap:PinRound(mark.ring, -1, 0.5, 40)
+  ok(not mark.ring:IsShown(), "a circle wholly off the map is hidden")
+  TMap:DrawBases()
   B.db.map.bases = false
   TMap:DrawBases()
   ok(not mark.badge:IsShown() and not mark.ring:IsShown(), "base circles can be switched off")
   B.db.map.bases = true
   TMap.hover = nil
+end
+
+-- ---------------------------------------------------------------- score panel, prediction, scoreboard
+do
+  local SP, TM = B.BGScore, B.Timers
+  -- Warsong Gulch: big flag scores and the carrier
+  Mock.states = { { "1/3", "Interface\\WorldStateFrame\\AllianceFlag" }, { "2/3", "Interface\\WorldStateFrame\\HordeFlag" } }
+  Mock.Fire("UPDATE_WORLD_STATES")
+  ok(TM.score.Alliance.cur == 1 and TM.score.Horde.cur == 2 and TM.score.Horde.max == 3, "WSG score read at once")
+  Mock.Tick(0.3)
+  ok(SP.frame:IsShown() and SP.mode == "flags", "score panel in Warsong Gulch: flag score")
+  ok(SP.big.Alliance.num.text == 1 or SP.big.Alliance.num.text == "1", "Alliance's score shown")
+  ok(SP.title.text == "Warsong Gulch", "the panel names the battleground")
+  Mock.Fire("CHAT_MSG_BG_SYSTEM_HORDE", "The Alliance flag was picked up by Rogueone!")
+  Mock.Tick(0.1)
+  -- the carriers live inside the score panel: one window
+  local FLG = B.Flags
+  Mock.Tick(0.3)
+  ok(FLG.docked and FLG:Merged() and not FLG.frame:IsShown(), "flag carriers are inside the score panel, no second window")
+  ok(FLG.rows[1]:IsShown() and FLG.rows[2]:IsShown(), "both rows show there")
+  local carried = (FLG.rows[1].name.text or "") .. (FLG.rows[2].name.text or "")
+  ok(string.find(carried, "Rogueone", 1, true), "who carries it (" .. carried .. ")")
+  -- Focused Assault: one stack a minute, +10 % each, from the pickup alone
+  local cr = FLG:Enemy() or FLG:Friend()
+  local crRow = (FLG:Enemy() == cr) and FLG.rows[1] or FLG.rows[2]
+  local keepSince = cr.since
+  cr.since = GetTime() - 135
+  local st, nx = FLG:Stacks(cr, GetTime())
+  ok(st == 2 and math.abs(nx - 45) < 0.1, "stacks from time held: 2 after 2:15, next in 45 s (" .. st .. ", " .. tostring(nx) .. ")")
+  FLG:Refresh()
+  ok(crRow.stack.text == "x2 +20%", "the row shows them: " .. tostring(crRow.stack.text))
+  -- seen live: the aura's real count wins
+  cr.guid = cr.guid or "0xF00000000000CC01"
+  Mock.Fire("DEBUFF_ADDED_OTHER", cr.guid, 1, 44094, 5, 60, 32, 2)
+  ok((FLG:Stacks(cr, GetTime())) == 5, "the aura's own count overrules the clock")
+  Mock.Fire("DEBUFF_ADDED_OTHER", cr.guid, 1, 12345, 9, 60, 33, 2)
+  ok((FLG:Stacks(cr, GetTime())) == 5, "other debuffs are ignored")
+  cr.since, cr.liveN, cr.liveAt = GetTime() - 30000, nil, nil
+  ok((FLG:Stacks(cr, GetTime())) == 99, "99 at most")
+  cr.since = keepSince
+  cr.liveN, cr.liveAt = nil, nil
+  FLG:Refresh()
+  -- the score panel switched off: they get their own window back
+  B.db.bgscore.enabled = false
+  Mock.Tick(0.5)
+  ok(not FLG.docked and FLG.frame:IsShown() and FLG.rows[1]:IsShown(), "score panel off: their own window")
+  B.db.bgscore.enabled = true
+  Mock.Tick(0.5)
+  ok(FLG.docked and not FLG.frame:IsShown(), "and back inside when it returns")
+  Mock.Fire("CHAT_MSG_BG_SYSTEM_NEUTRAL", "The flags are now placed at their bases.")
+  -- Arathi Basin: exact prediction, instantly
+  Mock.zone = "Arathi Basin"
+  Mock.Fire("ZONE_CHANGED_NEW_AREA")
+  Mock.states = { { "Bases: 2  Resources: 690/2000", "Interface\\x\\Alliance" }, { "Bases: 3  Resources: 1100/2000", "Interface\\x\\Horde" } }
+  Mock.Fire("UPDATE_WORLD_STATES")
+  local pr = TM.pred
+  ok(pr and pr.winner == "Horde", "Horde is ahead with more bases")
+  ok(pr and math.abs((pr.at - GetTime()) - 540) < 0.01, "90 ticks of 6 s: wins in 9:00 (" .. tostring(pr and (pr.at - GetTime())) .. ")")
+  -- both sides tick at exactly 540 s here, so the last tick can fall either side of the win
+  ok(pr and (pr.score == 1290 or pr.score == 1280), "the loser's points then: 690 + 59-60 ticks of 10 (" .. tostring(pr and pr.score) .. ")")
+  Mock.Tick(0.3)
+  ok(SP.mode == "bars" and string.find(SP.pred.text.text or "", "Horde wins in", 1, true), "prediction on the panel: " .. tostring(SP.pred.text.text))
+  ok(SP.bars.Horde.text.text == "1100/2000" and SP.bars.Horde.bases.text == "3 bases", "resources and bases on the bars")
+  local before, beforeScore = pr.at, pr.score
+  Mock.Tick(1)
+  ok(math.abs(TM.pred.at - before) < 0.01, "time passing keeps the same moment: it counts down smoothly")
+  -- a base flips: the answer changes at once, before any score arrives
+  TM.obj:Contest("Farm", "Alliance", 60)
+  ok(TM.pred.score > beforeScore, "a base being captured changes the prediction instantly (" .. TM.pred.score .. ")")
+  Mock.states = { { "Bases: 5  Resources: 690/2000", "Interface\\x\\Alliance" }, { "Bases: 0  Resources: 1100/2000", "Interface\\x\\Horde" } }
+  Mock.Fire("UPDATE_WORLD_STATES")
+  ok(TM.pred.winner == "Alliance", "five bases to none: the winner turns at once")
+  -- a server that ticks differently is learned from two equal ticks
+  Mock.states = { { "Bases: 5  Resources: 715/2000", "Interface\\x\\Alliance" }, { "Bases: 0  Resources: 1100/2000", "Interface\\x\\Horde" } }
+  Mock.Tick(2)
+  Mock.Fire("UPDATE_WORLD_STATES")
+  Mock.states[1][1] = "Bases: 5  Resources: 740/2000"
+  Mock.Tick(2)
+  Mock.Fire("UPDATE_WORLD_STATES")
+  ok(B.db.abTicks and B.db.abTicks[5] and B.db.abTicks[5][1] == 25, "two equal ticks unlike the table: learned")
+  B.db.abTicks = nil
+  ok(SP:Shows("nodes") and SP.nodes[1]:IsShown(), "the five bases on the panel")
+  -- the graveyard row
+  ok(string.find(SP.nodes[5].text.text or "", ":", 1, true), "the Farm's capture timer")
+  local WV = B.Timers.spirit
+  WV.guides, WV.n, WV.areaWave, WV.waveAt, WV.waveSrc, WV.waveGuide, WV.conflicts, WV.perGuide, WV.clockErr = {}, 0
+  Mock.runtime = 0
+  Mock.Tick(0.1)
+  ok(SP.gy:IsShown() and SP.gy.time.text == "" and not SP.gy.say, "graveyard row: blank until the game's clock runs")
+  -- no graveyard seen at all: the wave comes from the battleground's clock
+  Mock.runtime = 70000
+  ok(math.abs(WV:MyWave(GetTime()) - 20.12) < 0.01, "the wave is known from the game's clock alone (" .. tostring(WV:MyWave(GetTime())) .. ")")
+  Mock.Tick(0.1)
+  ok(string.find(SP.gy.time.text or "", "0:2", 1, true) and SP.gy.name.text == "Next res wave" and not SP.gy.confirmed,
+    "graveyard row: a time with no guide seen, not yet confirmed (" .. tostring(SP.gy.time.text) .. ")")
+  ok(SP.gy.sweep:IsShown() and SP.gy.say and string.find(SP.gy.say, "res wave", 1, true), "its bar, and a click says it")
+  ok(WV:NextWave("Horde", GetTime()) and WV:NextWave("Alliance", GetTime()), "the same wave for either side, for the enemy list")
+  -- a real heal locks it on: 5 s off the clock's guess, measured and followed
+  Mock.Tick(15)
+  Mock.runtime = nil
+  Mock.Fire("SPELL_GO_OTHER", 0, 22012, "0xF13000333D000AAA", "0xF13000333D000AAA")
+  Mock.Enemy("0xF13000333D000AAA", "Spirit Guide", "WARRIOR", 5, 5, { npc = true })
+  ok(WV.waveSrc == "seen" and WV.waveAt == GetTime(), "a heal seen locks the wave on")
+  Mock.Tick(10)
+  ok(math.abs(WV:MyWave(GetTime()) - 20.04) < 0.5 and SP.gy.confirmed, "and counts from it (" .. tostring(WV:MyWave(GetTime())) .. ")")
+  -- the next waves come 30.04 s apart, not drifting from a 30 s count
+  Mock.Tick(300)
+  ok(math.abs(WV:Global(GetTime()) - 20.4) < 0.6, "ten waves on it has not drifted (" .. tostring(WV:Global(GetTime())) .. ")")
+  -- the check: another graveyard healing out of step goes back to per graveyard
+  WV.conflicts = nil
+  for i = 1, 3 do
+    Mock.Fire("SPELL_GO_OTHER", 0, 22012, "0xF13000333D000BBB", "0xF13000333D000BBB")
+    Mock.Tick(11)
+    Mock.Fire("SPELL_GO_OTHER", 0, 22012, "0xF13000333D000AAA", "0xF13000333D000AAA")
+    Mock.Tick(19)
+  end
+  ok(WV.perGuide, "graveyards healing out of step: back to timing each one")
+  -- graveyards in step never trip it (one tick apart)
+  WV.perGuide, WV.conflicts, WV.waveAt, WV.waveGuide = nil, nil, nil, nil
+  for i = 1, 5 do
+    Mock.Fire("SPELL_GO_OTHER", 0, 22012, "0xF13000333D000BBB", "0xF13000333D000BBB")
+    Mock.Tick(0.2)
+    Mock.Fire("SPELL_GO_OTHER", 0, 22012, "0xF13000333D000AAA", "0xF13000333D000AAA")
+    Mock.Tick(29.8)
+  end
+  ok(not WV.perGuide and not WV.conflicts, "graveyards in step are one wave")
+  Mock.units["0xF13000333D000AAA"] = nil
+  Mock.Tick(0.1)
+  TM:Paint(GetTime())
+  -- back to Warsong Gulch: the counting
+  Mock.zone, Mock.states = "Warsong Gulch", nil
+  Mock.Fire("ZONE_CHANGED_NEW_AREA")
+  local BS, BD = B.BGStats, B.Scoreboard
+  local ME2 = "0x0000000000000001"
+  local FOE1 = "0x00000000000000A1"
+  local PET = "0xF140000000000009"
+  Mock.Enemy(PET, "Wolf", "WARRIOR", 3, 3, { npc = true, summonedBy = FOE1 })
+  Mock.Fire("AUTO_ATTACK_SELF", ME2, FOE1, 500, 0, 1, 1, 0, 0, 0)
+  Mock.Fire("SPELL_DAMAGE_EVENT_SELF", FOE1, ME2, 133, 1000, "0,0,0", 0, 2, "0,0,0,0")
+  Mock.Fire("SPELL_HEAL_BY_SELF", ME2, ME2, 2061, 700, 0, 0)
+  Mock.Fire("SPELL_HEAL_ON_SELF", ME2, ME2, 2061, 700, 0, 0)
+  local d, h = BS:Get("Tester")
+  ok(d == 1500 and h == 700, "your damage and healing, a self heal once (" .. d .. ", " .. h .. ")")
+  Mock.Fire("AUTO_ATTACK_OTHER", FOE1, ME2, 300, 0, 1, 1, 0, 0, 0)
+  Mock.Fire("AUTO_ATTACK_OTHER", PET, ME2, 40, 0, 1, 1, 0, 0, 0)
+  Mock.Fire("SPELL_DAMAGE_EVENT_OTHER", ME2, FOE1, 116, 60, "0,0,0", 0, 4, "0,0,0,3")
+  Mock.Fire("DAMAGE_SHIELD_OTHER", FOE1, ME2, 5, 3)
+  Mock.Fire("SPELL_HEAL_BY_OTHER", FOE1, FOE1, 2061, 90, 0, 1)
+  d, h = BS:Get("Rogueone")
+  ok(d == 405 and h == 90, "an enemy with their pet, DoT tick and shield (" .. d .. ", " .. h .. ")")
+  local NPC = "0xF130000000000123"
+  Mock.Enemy(NPC, "Guard", "WARRIOR", 2, 2, { npc = true })
+  Mock.Fire("AUTO_ATTACK_OTHER", NPC, ME2, 999, 0, 1, 1, 0, 0, 0)
+  ok(not BS.totals.Guard, "an NPC counts for nobody")
+  local FAR = "0x00000000000000B9"
+  Mock.Fire("SPELL_HEAL_BY_OTHER", FOE1, FAR, 2061, 50, 0, 0)
+  local fare = Mock.Enemy(FAR, "Faraway", "PRIEST", 90, 90)
+  Mock.Tick(4.1)
+  local _, fh = BS:Get("Faraway")
+  ok(fh == 50, "a healer not seen yet gets the heal once their name is known (" .. tostring(fh) .. ")")
+  -- team sync: the highest count of each wins, nothing is added twice
+  Mock.Fire("CHAT_MSG_ADDON", "OBG", "H2.3.3,1", "BATTLEGROUND", "Friend")
+  Mock.Fire("CHAT_MSG_ADDON", "OBG", "DRogueone,9000,10;Tester,1,1", "BATTLEGROUND", "Friend")
+  d, h = BS:Get("Rogueone")
+  ok(d == 9000 and h == 90, "a teammate's higher count merges (" .. d .. ", " .. h .. ")")
+  d = BS:Get("Tester")
+  ok(d == 1500, "a lower one doesn't")
+  -- the table
+  Mock.scores = { { "Tester", 0, "Warrior", 3, 10, 2, 150, "Orc" }, { "Rogueone", 1, "Rogue", 7, 12, 1, 90, "Human" },
+                  { "Holy", 1, "Priest", 0, 5, 4, 40, "Human" } }
+  BD:Open()
+  ok(BD.frame:IsShown(), "scoreboard opens")
+  ok(BD.list[1].name == "Rogueone", "sorted by damage (" .. tostring(BD.list[1].name) .. ")")
+  BD:SortBy("kb")
+  ok(BD.list[1].name == "Rogueone" and BD.list[3].name == "Holy", "sort by killing blows")
+  BD:SortBy("kb")
+  ok(BD.list[1].name == "Holy", "again: the other way")
+  BD:SortBy("name")
+  ok(BD.list[1].name == "Holy" and BD.list[3].name == "Tester", "names from A")
+  BD.tab = "Horde"
+  BD:Refresh()
+  ok(table.getn(BD.list) == 1 and BD.list[1].name == "Tester", "one side only")
+  BD.tab = "all"
+  BD:Refresh()
+  -- clearly by team: each under a heading, with its totals; every row its team's flag
+  Mock.Fire("UPDATE_BATTLEFIELD_SCORE")
+  BD:Refresh()
+  ok(BD.shown[1].header == "Alliance" and BD.shown[4].header == "Horde" and table.getn(BD.shown) == 5, "a heading for each team")
+  ok(BD.shown[1].sums.kb == 7 and BD.shown[4].sums.kb == 3, "the headings add up their team")
+  ok(BD.rows[1]:IsShown() and not BD.rows[1].entry and string.find(BD.rows[1].cells[1].text, "ALLIANCE - ENEMY", 1, true), "says whose team: " .. tostring(BD.rows[1].cells[1].text))
+  ok(string.find(BD.rows[4].cells[1].text, "HORDE - YOUR TEAM", 1, true), "and yours")
+  ok(BD.rows[2].entry.fac == "Alliance" and not BD.rows[2].flag and not BD.flagA and not BD.flagFootA, "no team flags on the board, the colours say it")
+  -- the hover panel: instant, from what was counted
+  local ROG, HOLY = "0xF00000000000AB01", "0xF00000000000AB02"
+  Mock.Enemy(ROG, "Rogueone", "ROGUE", 5, 5)
+  Mock.Enemy(HOLY, "Holy", "PRIEST", 6, 6)
+  BS.kind[1766], BS.kind[408] = "int", "cc"
+  Mock.Fire("UNIT_CASTEVENT", HOLY, "", "START", 585, 2500)
+  local before = BS:Detail("Rogueone")
+  Mock.Fire("SPELL_GO_OTHER", 0, 1766, ROG, HOLY, 0, 1, 0)
+  Mock.Fire("SPELL_GO_OTHER", 0, 408, ROG, HOLY, 0, 1, 0)
+  Mock.Fire("SPELL_GO_OTHER", 0, 408, ROG, HOLY, 0, 0, 1)
+  Mock.Fire("UNIT_CASTEVENT", HOLY, "", "CAST", 585, 0)
+  Mock.Fire("SPELL_GO_OTHER", 0, 1766, ROG, HOLY, 0, 1, 0)
+  local after = BS:Detail("Rogueone")
+  ok(after.int == before.int + 1, "an interrupt counts only on someone casting (" .. after.int .. ")")
+  ok(after.cc == before.cc + 1, "crowd control counts when it lands, not when it misses (" .. after.cc .. ")")
+  Mock.Fire("SPELL_DISPEL_BY_OTHER", ROG, ROG, 123)
+  ok(BS:Detail("Rogueone").cleanse == after.cleanse + 1, "a dispel on your own side is a cleanse")
+  B.scoreSide.Tester = "Horde"
+  B.raidGuid = { [ROG] = true }
+  Mock.Fire("SPELL_DISPEL_BY_OTHER", ROG, HOLY, 123)
+  local d2 = BS:Detail("Rogueone")
+  ok(d2.purge == after.purge + 1 or d2.cleanse == after.cleanse + 2, "a dispel across the sides is told apart by team")
+  B.raidGuid = {}
+  Mock.Fire("SPELL_DAMAGE_EVENT_OTHER", HOLY, ROG, 1766, 700, "0,0,0", 0, 0, "0,0,0,0")
+  local d3 = BS:Detail("Rogueone")
+  ok(d3.bigHit >= 700 and d3.topD[1] and BS:Detail("Holy").taken >= 700, "biggest hit, top spells, damage taken")
+  BS:MergeX("Rogueone", 0, 0, 9, 0, 0, 0, 0)
+  ok(BS:Detail("Rogueone").int == 9, "a teammate's higher count merges")
+  Mock.Fire("CHAT_MSG_ADDON", "OBG", "XRogueone,1,2,10,4,5,6,7", "BATTLEGROUND", "Friend")
+  ok(BS:Detail("Rogueone").int == 10, "over team sync too")
+  BD:RowTip(BD.rows[2])
+  ok(BD.tip:IsShown() and BD.tip.lines[1].l.text == BD.rows[2].entry.name, "hovering a player shows the panel at once")
+  local tipText = ""
+  for i = 1, table.getn(BD.tip.lines) do tipText = tipText .. (BD.tip.lines[i].l:IsShown() and (BD.tip.lines[i].l.text or "") or "") .. "|" end
+  for _, want in ipairs({ "Interrupts", "Crowd control", "Cleanses", "Purges", "Killing blows", "Biggest hit", "Received" }) do
+    ok(string.find(tipText, want, 1, true), "the panel lists " .. want)
+  end
+  BD:RowTip(BD.rows[1])
+  ok(not BD.tip:IsShown(), "a heading has none")
+  BD:RowTip(BD.rows[2])
+  Mock.Run(BD.rows[2], "OnLeave")
+  ok(not BD.tip:IsShown(), "leaving the row hides it")
+  ok(not BD.rows[1].icon:IsShown() and BD.rows[2].icon:IsShown(), "a heading has no class icon, a player does")
+  ok(BD.rows[5].meTop:IsShown() and not BD.rows[2].meTop:IsShown(), "you are lined in gold, the team's colour stays")
+  B.db.board.group = false
+  BD:Refresh()
+  ok(table.getn(BD.shown) == 3 and not BD.shown[1].header, "the setting off: everyone sorted together")
+  B.db.board.group = true
+  BD:Refresh()
+  -- the team, not the race: the raid overrules, and realm names are matched with care
+  local keepScores, keepRaid = Mock.scores, B.raidName
+  Mock.scores = { { "Tester", 0, "Warrior" }, { "Pala", 1, "Paladin" }, { "Archerone-NZ", 1, "Hunter" },
+                  { "Same", 0, "Mage" }, { "Same-NZ", 1, "Mage" } }
+  B.raidName = { Pala = true }
+  Mock.Fire("UPDATE_BATTLEFIELD_SCORE")
+  ok(B:TeamOf("Pala") == "Horde", "in our raid = our team, whatever the row says")
+  ok(B:SideOf(nil, "Pala") == "friend", "so not an enemy")
+  ok(B:TeamOf("Archerone") == "Alliance" and B:TeamOf("Archerone-NZ") == "Alliance", "Name and Name-NZ are one player")
+  ok(B:TeamOf("Same") == "Horde" and B:TeamOf("Same-NZ") == "Alliance", "one name on two realms stays two players")
+  ok(B:TeamOf("Same-XX") == nil, "and is never guessed")
+  local rowsNow = BD:ReadGame()
+  ok(rowsNow[2].fac == "Horde", "the board uses that team")
+  B.scoreSide, B.scoreShort = {}, {}
+  Mock.scores, B.raidName = keepScores, keepRaid
+  Mock.Fire("UPDATE_BATTLEFIELD_SCORE")
+  BD:Refresh()
+  -- flag carriers: one line each, never wrapping or running into the next text
+  local FR = B.Flags.rows[1]
+  ok(B.Flags.frame.artEdge ~= nil or B.db.bgscore.border == "none", "the flag panel has the score panel's frame")
+  B.Flags.Fit(FR.sub, "Horde base - lower level - 212 yd - with 3 and a very long tail", 120)
+  ok(FR.sub:GetStringWidth() <= 120 and string.find(FR.sub.text, "..", 1, true), "a long line is cut to fit (" .. FR.sub.text .. ")")
+  B.Flags.Fit(FR.sub, "short", 120)
+  ok(FR.sub.text == "short", "a short one is left alone")
+  ok(not FR.sub.width, "no wrap width set on it")
+  local c2 = BD.cols[2].key
+  BD:MoveColumn(c2, 1)
+  ok(BD.cols[3].key == c2 and BD.cols[1].key == "name", "a column moved right; the name stays first")
+  B.db.board.hide.honor = true
+  BD:Refresh()
+  local hasHonor = false
+  for _, c in ipairs(BD.cols) do if c.key == "honor" then hasHonor = true end end
+  ok(not hasHonor, "a column hidden")
+  B.db.board.hide.honor = nil
+  B.db.board.order, B.db.board.sort, B.db.board.desc = {}, "damage", true
+  ok(string.find(BD.totalA.text or "", "Alliance: 2 players", 1, true), "team totals: " .. tostring(BD.totalA.text))
+  BD.frame:Hide()
+  -- the end: frozen numbers, opens by itself, the game's frame stays away, last game kept
+  WorldStateScoreFrame = Mock.New("Frame", "WorldStateScoreFrame", UIParent)
+  HideUIPanel = function(f) f:Hide() end
+  LeaveBattlefield = function() Mock.left = true end
+  Mock.winner = 0
+  Mock.Tick(0.6)
+  ok(BS.over, "the game ended: counting stops")
+  Mock.Fire("AUTO_ATTACK_SELF", ME2, FOE1, 5000, 0, 1, 1, 0, 0, 0)
+  ok(BS:Get("Tester") == 1500, "nothing added after the end")
+  Mock.Tick(1.1)
+  ok(BD.frame:IsShown() and B.db.lastGame and B.db.lastGame.winner == 0, "opens at the end, last game kept")
+  ok(string.find(BD.result.text or "", "Horde wins", 1, true), "says who won")
+  ok(BD.titleText.text == "Warsong Gulch Scoreboard", "the title names the battleground: " .. tostring(BD.titleText.text))
+  ok(BD.pic.file == "WarsongGulch" and BD.pic.tiles[1].texture == "Interface\\WorldMap\\WarsongGulch\\WarsongGulch1", "its map behind the window")
+  ok(B.db.lastGame.zoneKey == "WSG", "the last game remembers which battleground")
+  WorldStateScoreFrame:Show()
+  Mock.Tick(0.6)
+  ok(not WorldStateScoreFrame:IsShown(), "the game's frame stays away")
+  -- to the game's own and back again
+  Mock.Run(BD.gameBtn, "OnClick")
+  ok(BD.useGame and not BD.frame:IsShown() and WorldStateScoreFrame:IsShown(), "the game's own opens")
+  Mock.Tick(0.6)
+  ok(WorldStateScoreFrame:IsShown(), "and stays while chosen")
+  ok(BD.backBtn and BD.backBtn.parent == WorldStateScoreFrame, "with a button back on it")
+  Mock.Run(BD.backBtn, "OnClick")
+  ok(not BD.useGame and BD.frame:IsShown() and not WorldStateScoreFrame:IsShown(), "the button returns to ours")
+  -- each battleground's look, with sample players
+  for _, k in ipairs({ "WSG", "AB", "AV", "TG" }) do
+    BD:Preview(k)
+    ok(BD.pic.file == B.Map.DATA[k].file and table.getn(BD.list) == 10, "preview of " .. k)
+  end
+  BD.frame:Hide()
+  ok(not BD.preview, "closing ends the preview")
+  BD:Open()
+  Mock.Run(BD.leave, "OnClick")
+  ok(Mock.left and not BD.frame:IsShown(), "Leave battleground works from our window")
+  SlashCmdList["OCTOBG"]("score")
+  ok(BD.frame:IsShown(), "/obg score")
+  BD.frame:Hide()
+  WorldStateScoreFrame, HideUIPanel, LeaveBattlefield = nil, nil, nil
+  Mock.winner, Mock.units[PET], Mock.units[NPC], Mock.units[FAR] = nil, nil, nil, nil
+  fare = nil
+  B.db.lastGame = nil
+  Mock.scores = { { "Rogueone", 1, "Rogue" }, { "Flagrunner", 1, "Paladin" }, { "Healbot", 1, "Priest" }, { "Tester", 0, "Warrior" } }
 end
 
 -- layout mode

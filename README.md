@@ -48,7 +48,7 @@ lower level", "midfield (west)") and the cooldowns they have used (trinket, Ice 
 "Ice Block 6s" while they are immune. Left-click: target. Right-click: target and cast your flag
 spell (Mind Vision for priests). Ctrl-click: post their health and location to /bg.
 
-**Timers** - resurrection waves per graveyard, a big "Resurrection in N" while dead, Arathi Basin
+**Timers** - the next resurrection wave (known from the game's clock, no graveyard in sight needed), a big "Resurrection in N" while dead, Arathi Basin
 bases (60 s), Alterac Valley towers and graveyards (5 min), the battle start countdown and who
 reaches 2000 first in Arathi Basin.
 
@@ -99,9 +99,21 @@ frame with their used cooldowns, diminishing returns, distance, line of sight an
 **Stealth** - an alert (Spy's) when an enemy stealths nearby or walks into range stealthed, and a
 mark where they disappeared with a circle for how far they could be by now.
 
+**Score panel** - everything about the game in one framed panel, in the game's own art: the
+battleground's name and picture, the time, the score (Warsong Gulch: flags and who carries them;
+Arathi Basin: resources, bases, capture timers and exactly who wins when, updating the moment anything
+changes). Frame, colour, picture, darkness, width and what shows are all settings.
+
+**Scoreboard** - kills, deaths, honor, flag captures, damage and healing for both teams in one table:
+click a heading to sort, right-click to move it, hide what you don't want. Opens when the game ends
+(`/obg score`, or its key) and keeps the last game. The server doesn't send damage or healing, so
+OctoBG counts them from the combat your client receives and shares counts with other OctoBG users; a
+fight out of range of everyone with OctoBG can't be seen, and healing includes overheal.
+
 **Interact key** - one key that right-clicks the nearest NPC or object within 5 yards: return or grab
-a dropped flag the moment you reach it, click a banner, talk to an NPC. Needs WeirdUtils' interact.dll
-(the options page explains the one-time install).
+a dropped flag the moment you reach it, click a banner, talk to an NPC. Needs Interact.dll
+([github.com/lookino/Interact](https://github.com/lookino/Interact); pfUI Octo's DLL installer brings it,
+and the options page explains the install).
 
 **Keep target** - re-targets a hunter whose Feign Death dropped your target, a rogue (or druid) the
 moment they show again after Vanish or Stealth, and any rogue or druid wearing a Hunter's Mark -

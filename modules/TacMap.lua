@@ -140,6 +140,27 @@ function TM:Pin(t, mx, my, edge)
   return x, y, off
 end
 
+-- A circle s px across centred on map coordinates, cut off at the map's edge
+-- (textures are not clipped by their frame in 1.12: a zoomed-in base or
+-- stealth circle used to spill over the screen around the map).
+function TM:PinRound(t, mx, my, s)
+  t.mx, t.my, t.roundS = mx, my, s
+  local x, y = (mx * MAP_W - self.vx) * self.k, (my * MAP_H - self.vy) * self.k
+  local h = s / 2
+  local x0, y0 = math.max(0, x - h), math.max(0, y - h)
+  local x1, y1 = math.min(self.w, x + h), math.min(self.h, y + h)
+  if s < 1 or x1 - x0 < 1 or y1 - y0 < 1 then
+    t:Hide()
+    return
+  end
+  t:ClearAllPoints()
+  t:SetWidth(x1 - x0)
+  t:SetHeight(y1 - y0)
+  t:SetPoint("TOPLEFT", self.frame, "TOPLEFT", x0, -y0)
+  t:SetTexCoord((x0 - x + h) / s, (x1 - x + h) / s, (y0 - y + h) / s, (y1 - y + h) / s)
+  t:Show()
+end
+
 local function Repin(self, list)
   for i, t in pairs(list) do
     if t.mx and t:IsShown() then self:Pin(t, t.mx, t.my, t.edgeOk) end
@@ -172,7 +193,7 @@ function TM:Repin()
     if gh.ring.mx and gh.ring:IsShown() then
       self:Pin(gh.ring, gh.ring.mx, gh.ring.my, true)
       self:Pin(gh.pip, gh.ring.mx, gh.ring.my, true)
-      if gh.area:IsShown() then self:Pin(gh.area, gh.ring.mx, gh.ring.my, true) end
+      if gh.area.roundS then self:PinRound(gh.area, gh.ring.mx, gh.ring.my, gh.area.roundS) end
     end
   end
 end
@@ -657,9 +678,9 @@ function TM:DrawStealth(f, now)
         self:Pin(gh.pip, mx, my, true)
         local rad = T:StealthRadius(m, now) * yd
         if rad >= 4 and not edge then
-          Size(gh.area, rad * 2 * 64 / 61.5)
-          self:Pin(gh.area, mx, my, true)
+          self:PinRound(gh.area, mx, my, rad * 2 * 64 / 61.5)
         else
+          gh.area.roundS = nil
           gh.area:Hide()
         end
       end
@@ -667,6 +688,7 @@ function TM:DrawStealth(f, now)
   end
   for i = n + 1, table.getn(self.ghosts) do
     local gh = self.ghosts[i]
+    gh.area.roundS = nil
     gh.area:Hide()
     gh.ring:Hide()
     gh.pip:Hide()
@@ -933,6 +955,9 @@ function TM:Samples(f)
   x, y = self:ToFrame(0.44, 0.5)
   Place(gh.ring, f, x, y)
   Place(gh.pip, f, x, y)
+  gh.area.roundS = nil
+  gh.area:ClearAllPoints()
+  gh.area:SetTexCoord(0, 1, 0, 1)
   Size(gh.area, self.w * 0.09)
   Place(gh.area, f, x, y)
   self.where:SetText("|cffff5555EFC|r Testrogue - Horde base - lower level")
@@ -1279,8 +1304,7 @@ function TM:DrawBases(quick)
         if not off then
           n = n + 1
           local m = self:BaseMark(n)
-          Size(m.ring, rad * 2 * 64 / 61.5)
-          self:Pin(m.ring, mx, my, false)
+          self:PinRound(m.ring, mx, my, rad * 2 * 64 / 61.5)
           local b = m.badge
           if not quick or b.base ~= base then
             local at, coming = I:Counts(base)
