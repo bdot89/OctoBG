@@ -1,5 +1,22 @@
 # OctoBG - notes for Claude Code
 
+## Performance pass ported from a cloud session (12 Nov 2026)
+- A cloud session worked on github bdot89/octowow-bg, which is the FIRST upload of OctoBG (v1.0, 9 Oct)
+  and committed there as "1.1.0" (1e51569). This repo (bdot89/OctoBG) is the real one; what still
+  applied was ported here by hand. Not ported: its RangeClue reorder (no such function here), its
+  Python LuaCheck / tools/test (tests\run.ps1 covers it).
+- HUD (20 Hz): a fresh UnitPosition only for enemies within range + 30 yd (Tracker:Scan keeps the
+  rest), raid positions at 10 Hz (`FriendSpots`), texts written only when changed (`U.SetText`,
+  `infoFor`, ghost `kindFor` / `secFor`).
+- NOT kept: the cloud version's line-of-sight limit (inSight only within 120 yd). It removed the
+  enemy list's sight dot for far enemies and the user said "i want it to work the same as before":
+  performance changes here must not change what any panel shows.
+- `U.Time` caches its strings per second (and no longer returns "-0"). Timers rows keep facts (pk,
+  name, by, ends) and build the /bg line on click or hover (`TM:SayText`); `r.entry` replaced `r.say`.
+- `/obg probe` adds: player GUID form, SPELL_GO_OTHER count + last target (`T.goCount`, `T.goSample`),
+  and an addon-channel echo test (`Sync:EchoTest`, message "T~", answer after 3 s).
+- Not verified in game: all of it; that this server echoes addon messages back to the sender.
+
 ## Map circles cut at the map edge (31 Oct 2026)
 - User (WSG screenshot, zoomed map, the MID base circle drawn far over the game world): "stop this".
   Textures are not clipped by their frame here. `TM:PinRound(t, mx, my, size)` sizes and crops a

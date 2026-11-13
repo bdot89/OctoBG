@@ -128,13 +128,31 @@ function U.ClassToken(name)
 end
 
 -- "45", "1:05" -- countdowns round up so 0 only shows when it is over.
+-- Cached per whole second (under an hour: at most 3600 strings), since every
+-- countdown asks many times a second.
+local timeCache = {}
 function U.Time(s)
   if not s or s < 0 then s = 0 end
   s = math.ceil(s - 0.05)
+  if s <= 0 then s = 0 end   -- ceil gives -0 under 0.05, which prints as "-0"
+  local t = timeCache[s]
+  if t then return t end
   if s >= 60 then
-    return string.format("%d:%02d", math.floor(s / 60), math.mod(s, 60))
+    t = string.format("%d:%02d", math.floor(s / 60), math.mod(s, 60))
+  else
+    t = tostring(s)
   end
-  return tostring(s)
+  if s < 3600 then timeCache[s] = t end
+  return t
+end
+
+-- SetText only when the text changed (repainted panels call this a lot).
+-- Only for font strings that are always written through here.
+function U.SetText(fs, text)
+  if fs.shown ~= text then
+    fs.shown = text
+    fs:SetText(text)
+  end
 end
 
 -- "Name-NZ" -> "Name": cross-realm battlegrounds show a realm on some lists and not others.

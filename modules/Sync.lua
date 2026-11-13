@@ -442,7 +442,37 @@ HANDLERS.G = function(body, sender)
   end
 end
 
+-- /obg probe: send a test message to ourselves; the server echoes addon
+-- messages to the sender, so it coming back means sharing can work on this
+-- server. Reported 3 s later.
+function SY:EchoTest()
+  local ch = self:Channel()
+  if not ch then
+    B:Print("addon channel: test it inside a battleground (or in a group with a world panel on)")
+    return
+  end
+  if not SendAddonMessage then
+    B:Print("addon channel: |cffff5555this client has no SendAddonMessage|r")
+    return
+  end
+  local sent = GetTime()
+  self.echoAt = nil
+  pcall(SendAddonMessage, PREFIX, "T~", ch)
+  local f = self.echoFrame or CreateFrame("Frame")
+  self.echoFrame = f
+  f:SetScript("OnUpdate", function()
+    if GetTime() - sent < 3 then return end
+    this:SetScript("OnUpdate", nil)
+    if SY.echoAt then
+      B:Print("addon channel " .. ch .. ": |cff55ff55works|r (test message came back)")
+    else
+      B:Print("addon channel " .. ch .. ": |cffff5555no echo in 3 s|r - team sync may not work on this server")
+    end
+  end)
+end
+
 B:On("CHAT_MSG_ADDON", function(ev, prefix, msg, channel, sender)
+  if prefix == PREFIX and msg == "T~" and sender == SY:Me() then SY.echoAt = GetTime() end   -- the probe's test came back
   if prefix ~= PREFIX or not SY:Receiving() then return end
   if type(msg) ~= "string" or type(sender) ~= "string" or sender == SY:Me() then return end
   if string.len(msg) < 2 or string.len(msg) > 255 then return end

@@ -155,7 +155,9 @@ function H:DrawEnemies(f, now, px, py, facing, rotate, scale)
     -- an enemy gone into stealth is drawn by DrawStealth instead
     if u.x and not u.dead and nb < MAX_BLIPS and not (stealth[guid] and not u.visible) then
       local age = now - (u.posAt or 0)
-      if u.visible and not u.fake then
+      -- a fresh position each frame only near the radar; Tracker:Scan keeps
+      -- the others current five times a second
+      if u.visible and not u.fake and (not u.dist or u.dist <= range + 30) then
         local x, y = U.Position(guid)
         if x then
           u.x, u.y, u.posAt = x, y, now
@@ -209,7 +211,7 @@ function H:DrawEnemies(f, now, px, py, facing, rotate, scale)
             efcDrawn = true
           end
           if u.showName and u.visible and not edge then
-            b.name:SetText(u.name or "")
+            U.SetText(b.name, u.name or "")
             b.name:SetTextColor(r, g, bl, a)
             b.name:SetPoint("TOP", f, "CENTER", ox, oy - 8)
             b.name:Show()
@@ -286,7 +288,11 @@ function H:DrawStealth(f, now, px, py, facing, rotate, scale)
       else
         gh.area:Hide()
       end
-      gh.label:SetText((m.kind or "Stealth") .. " " .. math.floor(now - m.lastSeen) .. "s")
+      local sec = math.floor(now - m.lastSeen)
+      if gh.kindFor ~= m.kind or gh.secFor ~= sec then
+        gh.kindFor, gh.secFor = m.kind, sec
+        gh.label:SetText((m.kind or "Stealth") .. " " .. sec .. "s")
+      end
       gh.label:SetPoint("TOP", f, "CENTER", ox, oy - 8)
       gh.label:Show()
     end
@@ -300,32 +306,57 @@ function H:DrawStealth(f, now, px, py, facing, rotate, scale)
   end
 end
 
-function H:DrawFriends(f, px, py, facing, rotate, scale)
+local RAID = {}
+for i = 1, 40 do RAID[i] = "raid" .. i end
+
+-- Raid members' world positions, read at most ten times a second: the HUD
+-- redraws twenty times (the rotation needs that), the positions do not.
+local spots = { n = 0, at = -1 }
+local function FriendSpots(now)
+  if now - spots.at < 0.1 and now >= spots.at then return spots end
+  spots.at = now
+  local n = 0
+  for i = 1, math.min(GetNumRaidMembers(), 40) do
+    local unit = RAID[i]
+    if not UnitIsUnit(unit, "player") and not UnitIsDeadOrGhost(unit) then
+      local x, y = M:UnitWorld(unit)
+      if x then
+        n = n + 1
+        local s = spots[n]
+        if not s then
+          s = {}
+          spots[n] = s
+        end
+        local _, class = UnitClass(unit)
+        s.x, s.y, s.class, s.name = x, y, class, UnitName(unit)
+      end
+    end
+  end
+  spots.n = n
+  return spots
+end
+
+function H:DrawFriends(f, now, px, py, facing, rotate, scale)
   local np = 0
   local ffc = B.Flags:Friend()
   local ffcName = ffc and not ffc.dropped and ffc.name
   local ffcDrawn = false
   local range = B.db.hud.range
   if B.db.hud.friends then
-    for i = 1, GetNumRaidMembers() do
-      local unit = "raid" .. i
-      if np < MAX_PALS and not UnitIsUnit(unit, "player") and not UnitIsDeadOrGhost(unit) then
-        local x, y = M:UnitWorld(unit)
-        if x then
-          local sx, sy = M.Relative(px, py, facing, x, y, rotate)
-          if sx * sx + sy * sy <= range * range then
-            np = np + 1
-            local p = self:Pal(np)
-            local _, class = UnitClass(unit)
-            local r, g, b = U.ClassColor(class)
-            p:SetVertexColor(r, g, b, 0.85)
-            Place(p, f, sx * scale, sy * scale)
-            if ffcName and UnitName(unit) == ffcName then
-              self.ffcMark:SetTexture(U.FLAG[B.enemy or "Horde"])
-              Place(self.ffcMark, f, sx * scale + 5, sy * scale + 8)
-              ffcDrawn = true
-            end
-          end
+    local list = FriendSpots(now)
+    for i = 1, list.n do
+      local s = list[i]
+      local sx, sy = M.Relative(px, py, facing, s.x, s.y, rotate)
+      if np < MAX_PALS and sx * sx + sy * sy <= range * range then
+        np = np + 1
+        local p = self:Pal(np)
+        local r, g, b = U.ClassColor(s.class)
+        p:SetVertexColor(r, g, b, 0.85)
+        Place(p, f, sx * scale, sy * scale)
+        if ffcName and s.name == ffcName then
+          self.ffcMark:SetTexture(U.FLAG[B.enemy or "Horde"])
+          Place(self.ffcMark, f, sx * scale + 5, sy * scale + 8)
+          ffcDrawn = true
         end
       end
     end
@@ -342,6 +373,7 @@ function H:Update()
   local facing = M:Facing()
   if B.test and not px then px, py = 0, 0 end
   if not px then
+    self.infoFor = nil
     self.info:SetText("|cffaaaaaano position (SuperWoW or a battleground map needed)|r")
     return
   end
@@ -359,11 +391,16 @@ function H:Update()
 
   local seen, inSight = self:DrawEnemies(f, now, px, py, facing, rotate, scale)
   self:DrawStealth(f, now, px, py, facing, rotate, scale)
-  self:DrawFriends(f, px, py, facing, rotate, scale)
-  if seen > 0 then
-    self.info:SetText(seen .. (seen == 1 and " enemy" or " enemies") .. " within " .. db.range .. " yd  |cff88ff88" .. inSight .. " in sight|r")
-  else
-    self.info:SetText("|cff888888no enemies within " .. db.range .. " yd|r")
+  self:DrawFriends(f, now, px, py, facing, rotate, scale)
+  -- the line under the radar, rebuilt only when one of its numbers changes
+  local key = (seen * 100 + inSight) * 1000 + db.range
+  if key ~= self.infoFor then
+    self.infoFor = key
+    if seen > 0 then
+      self.info:SetText(seen .. (seen == 1 and " enemy" or " enemies") .. " within " .. db.range .. " yd  |cff88ff88" .. inSight .. " in sight|r")
+    else
+      self.info:SetText("|cff888888no enemies within " .. db.range .. " yd|r")
+    end
   end
 end
 

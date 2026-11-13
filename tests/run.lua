@@ -574,7 +574,17 @@ ok(R.nIcons == 3, "default width: three cooldown icons")
 Mock.Fire("CHAT_MSG_BG_SYSTEM_NEUTRAL", "The battle for Warsong Gulch begins in 1 minute.")
 Mock.Tick(0.2)
 local trow = B.Timers.rows[1]
-ok(trow:IsShown() and trow.say and string.find(trow.say, "Battle begins in", 1, true), "start timer row (" .. tostring(trow.say) .. ")")
+local tsay = B.Timers:SayText(trow.entry, GetTime())
+ok(trow:IsShown() and tsay and string.find(tsay, "Battle begins in", 1, true), "start timer row (" .. tostring(tsay) .. ")")
+ok(B.U.Time(65) == "1:05" and B.U.Time(65) == B.U.Time(64.5) and B.U.Time(0.5) == "1" and B.U.Time(-3) == "0", "countdown strings (cached per second)")
+do
+  local sets = 0
+  local fs = { SetText = function() sets = sets + 1 end }
+  B.U.SetText(fs, "a")
+  B.U.SetText(fs, "a")
+  B.U.SetText(fs, "b")
+  ok(sets == 2, "U.SetText writes only a changed text")
+end
 ok(trow.label.color and trow.label.color[1] == 1 and trow.label.color[3] == 1, "label on a bar is white")
 local chatBefore = table.getn(Mock.chat)
 Mock.Run(trow, "OnClick")
@@ -1279,6 +1289,22 @@ do
   B.SCT:Notify("obgCd", "Blind ready")
   ok(forwarded == nil, "pfUI's combat text off: no alert text")
   pfUI = nil
+end
+
+-- /obg probe: spell events, GUID form, addon channel echo
+do
+  local before = table.getn(Mock.printed)
+  local goBefore = B.Tracker.goCount
+  Mock.Fire("SPELL_GO_OTHER", 0, 133, "0x00000000000000F1", "0x00000000000000F2")
+  ok(B.Tracker.goCount == goBefore + 1 and B.Tracker.goSample == "0x00000000000000F2", "spell events counted for the probe")
+  SlashCmdList["OCTOBG"]("probe")
+  Mock.Fire("CHAT_MSG_ADDON", "OBG", "T~", "BATTLEGROUND", UnitName("player"))
+  Mock.Tick(3.5)
+  local out = table.concat(Mock.printed, "\n", before + 1)
+  ok(string.find(out, "nampower spell events", 1, true) and string.find(out, "player GUID", 1, true),
+    "probe reports spell events and the GUID form")
+  ok(string.find(out, "addon channel", 1, true), "probe reports on the addon channel")
+  if B.Sync:Channel() then ok(string.find(out, "works", 1, true), "the echo coming back = channel works") end
 end
 
 Mock.Fire("PLAYER_LEAVING_WORLD")

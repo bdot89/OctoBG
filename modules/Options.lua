@@ -1847,6 +1847,16 @@ B:Command("probe", "print what the client returns for positions and the map (for
       .. " pos " .. tostring(tx) .. ", " .. tostring(ty) .. ", " .. tostring(tz)
       .. " dist " .. tostring(U.Distance("target")) .. " sight " .. tostring(U.InSight("target")))
   end
+  -- what team sync and the spell-based tracking rely on
+  local pg = U.GuidOf("player")
+  B:Print("player GUID " .. tostring(pg) .. ((pg and string.sub(pg, 1, 10) == "0x00000000" and string.len(pg) == 18)
+    and "  |cff55ff55(short form for sharing)|r" or "  |cffffd100(unexpected form: sharing may not match)|r"))
+  local T = B.Tracker
+  B:Print("nampower spell events this session: " .. T.goCount
+    .. (T.goSample and ("  last target " .. tostring(T.goSample) .. " (spell " .. tostring(T.goSampleSpell) .. ")")
+      or (B.env.nampower and (T.goCount > 0 and "  |cffffd100none carried a target|r"
+        or "  |cffffd100(none yet: watch a fight, or check NampowerSettings that spell events are on)|r") or "  (no nampower)")))
+  B.Sync:EchoTest()
   if GetNumBattlefieldFlagPositions then
     for i = 1, GetNumBattlefieldFlagPositions() do
       local fx, fy, tok = GetBattlefieldFlagPosition(i)

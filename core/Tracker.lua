@@ -16,7 +16,7 @@
 
 local B = OctoBG
 local U = B.U
-local T = { units = {}, count = 0, sorted = {}, byName = {}, released = {} }
+local T = { units = {}, count = 0, sorted = {}, byName = {}, released = {}, goCount = 0 }
 B.Tracker = T
 
 local MAX_UNITS = 80
@@ -329,7 +329,9 @@ end
 --   SPELL_DISPEL_BY_OTHER       caster, target, spellId
 --   ENVIRONMENTAL_DMG_OTHER     unit, type, damage
 B:On("SPELL_START_OTHER", function(ev, item, spell, caster) T:Consider(caster) end, true)
-B:On("SPELL_GO_OTHER", function(ev, item, spell, caster)
+B:On("SPELL_GO_OTHER", function(ev, item, spell, caster, target)
+  T.goCount = T.goCount + 1
+  if target then T.goSample, T.goSampleSpell = target, spell end   -- for /obg probe
   if spell == RELEASE then
     if caster then Released(caster) end
     return

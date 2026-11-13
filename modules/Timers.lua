@@ -492,9 +492,40 @@ local function Entry(n)
     e = {}
     TM.pool[n] = e
   end
-  e.icon, e.coords, e.label, e.text, e.value, e.color, e.labelFac, e.say = nil, nil, nil, nil, nil, nil, nil, nil
+  e.icon, e.coords, e.label, e.text, e.value, e.color, e.labelFac = nil, nil, nil, nil, nil, nil, nil
+  e.pk, e.name, e.by, e.ends = nil, nil, nil, nil
   return e
 end
+
+-- The line a click says in /bg, built only on click or hover from what the row
+-- is (pk), name, by and ends (an absolute time): the panel repaints ten times
+-- a second, and building strings there would only feed Lua 5.0's
+-- stop-the-world garbage collector.
+function TM:SayText(e, now)
+  local pk = e and e.pk
+  if not pk then return nil end
+  local left = e.ends and Words(e.ends - now)
+  if pk == "start" then return "Battle begins in " .. left end
+  if pk == "node" then return e.name .. ": " .. (e.by or "?") .. " takes it in " .. left end
+  if pk == "cap" then return e.name .. ": " .. (e.by or "?") .. " in " .. left end
+  if pk == "hold" then return e.name .. ": held by " .. e.by end
+  if pk == "free" then return e.name .. ": nobody has it" end
+  if pk == "win" then
+    local pr = self.pred
+    return e.name .. " wins in " .. left .. (pr and (" (" .. pr.max .. " to " .. pr.score .. ")") or "")
+  end
+  if pk == "score" then return e.name .. " " .. (e.label or "") end
+  if pk == "wave" then return (e.label or "") .. ": next res wave in " .. left end
+  return nil
+end
+
+local GREY = { 0.7, 0.7, 0.7 }
+local SILVER = { 0.8, 0.8, 0.8 }
+local SIDES = { "Alliance", "Horde" }
+
+-- reused list and comparator for the graveyard rows (no garbage per paint)
+local glist = {}
+local function ByFaction(a, b) return (a.faction or "") < (b.faction or "") end
 
 -- POI icon of a landmark (cached on the landmark, which Map rebuilds every 2 s).
 local function PoiCoords(name)
@@ -514,8 +545,8 @@ function TM:Collect(now)
     n = n + 1
     e = Entry(n)
     e.icon, e.label, e.text = ICON_WATCH, "Battle begins", U.Time(O.start - now)
-    e.value, e.color = 1 - (O.start - now) / 120, { 0.8, 0.8, 0.8 }
-    e.say = "Battle begins in " .. Words(O.start - now)
+    e.value, e.color = 1 - (O.start - now) / 120, SILVER
+    e.pk, e.ends = "start", O.start
   end
 
   if B.zone == "AB" and B.BGScore and B.BGScore:Shows("nodes") then
@@ -533,11 +564,11 @@ function TM:Collect(now)
         e.text = U.Time(node.ends - now)
         e.value = 1 - (node.ends - now) / node.dur
         e.color = U.FACTION[node.by]
-        e.say = name .. ": " .. (node.by or "?") .. " takes it in " .. Words(node.ends - now)
+        e.pk, e.name, e.by, e.ends = "node", name, node.by, node.ends
       elseif node and node.owner then
-        e.say = name .. ": held by " .. node.owner
+        e.pk, e.name, e.by = "hold", name, node.owner
       else
-        e.say = name .. ": nobody has it"
+        e.pk, e.name = "free", name
       end
       if node and node.owner then e.labelFac = node.owner end
     end
@@ -548,7 +579,7 @@ function TM:Collect(now)
         e = Entry(n)
         e.label, e.text = name, U.Time(node.ends - now)
         e.value, e.color = 1 - (node.ends - now) / node.dur, U.FACTION[node.by]
-        e.say = name .. ": " .. (node.by or "?") .. " in " .. Words(node.ends - now)
+        e.pk, e.name, e.by, e.ends = "cap", name, node.by, node.ends
         local coords = PoiCoords(name)
         if coords then e.icon, e.coords = POI, coords end
       end
@@ -557,39 +588,49 @@ function TM:Collect(now)
 
   if B.db.timers.predict and B.zone == "AB" and not (B.BGScore and B.BGScore:Shows("predict")) then
     local pr = self.pred
-    for _, fac in ipairs({ "Alliance", "Horde" }) do
+    for i = 1, 2 do
+      local fac = SIDES[i]
       local p = P[fac]
       if p.cur then
         n = n + 1
         e = Entry(n)
-        e.icon, e.label = U.FLAG[fac], p.cur .. "/" .. (p.max or "?")
-        local wins = pr and pr.winner == fac
-        e.text = wins and ("wins " .. U.Time(pr.at - now)) or ""
-        e.value, e.color = p.cur / (p.max or 2000), U.FACTION[fac]
-        if wins then
-          e.say = fac .. " wins in " .. Words(pr.at - now) .. " (" .. pr.max .. " to " .. pr.score .. ")"
-        else
-          e.say = fac .. " " .. e.label
+        -- label and time text rebuilt only when the score or the shown second changes
+        if p.labelFor ~= p.cur or p.labelMax ~= p.max then
+          p.labelFor, p.labelMax, p.label = p.cur, p.max, p.cur .. "/" .. (p.max or "?")
         end
+        local wins = pr and pr.winner == fac
+        local key = wins and math.ceil(pr.at - now - 0.05) or -1
+        if p.textFor ~= key then
+          p.textFor = key
+          p.text = wins and ("wins " .. U.Time(pr.at - now)) or ""
+        end
+        e.icon, e.label, e.text = U.FLAG[fac], p.label, p.text
+        e.value, e.color = p.cur / (p.max or 2000), U.FACTION[fac]
+        e.name = fac
+        if wins then e.pk, e.ends = "win", pr.at else e.pk = "score" end
       end
     end
   end
 
   -- one wave for the whole game: the score panel's row says it (per graveyard only if they differ)
   if B.db.timers.spirit and (S.perGuide or not (B.BGScore and B.BGScore:Shows("graveyard"))) then
-    local list = {}
+    local k = 0
     for _, g in pairs(S.guides) do
-      if g.anchor then table.insert(list, g) end
+      if g.anchor then
+        k = k + 1
+        glist[k] = g
+      end
     end
-    table.sort(list, function(a, b) return (a.faction or "") < (b.faction or "") end)
-    for i = 1, math.min(table.getn(list), 6) do
-      local g = list[i]
+    for i = table.getn(glist), k + 1, -1 do glist[i] = nil end
+    if k > 1 then table.sort(glist, ByFaction) end
+    for i = 1, math.min(k, 6) do
+      local g = glist[i]
       local rem = S:Remaining(g, now)
       n = n + 1
       e = Entry(n)
       e.icon, e.label, e.text = ICON_RES, S:Label(g, now), U.Time(rem)
-      e.value, e.color = 1 - rem / WAVE, U.FACTION[g.faction] or { 0.7, 0.7, 0.7 }
-      e.say = e.label .. ": next res wave in " .. Words(rem)
+      e.value, e.color = 1 - rem / WAVE, U.FACTION[g.faction] or GREY
+      e.pk, e.ends = "wave", now + rem
     end
   end
   return n
@@ -653,13 +694,15 @@ function TM:Build()
     r.hl:SetAlpha(0.5)
     r:RegisterForClicks("LeftButtonUp")
     r:SetScript("OnClick", function()
-      if this.say then U.SendBG(this.say) end
+      local say = TM:SayText(this.entry, GetTime())
+      if say then U.SendBG(say) end
     end)
     r:SetScript("OnEnter", function()
-      if not this.say then return end
+      local say = TM:SayText(this.entry, GetTime())
+      if not say then return end
       GameTooltip:SetOwner(this, "ANCHOR_LEFT")
       GameTooltip:AddLine("Click: say it in /bg", 1, 0.82, 0)
-      GameTooltip:AddLine(this.say, 1, 1, 1, 1)
+      GameTooltip:AddLine(say, 1, 1, 1, 1)
       GameTooltip:Show()
     end)
     r:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -704,8 +747,8 @@ function TM:Paint(now)
       else
         r.icon:Hide()
       end
-      r.label:SetText(e.label or "")
-      r.text:SetText(e.text or "")
+      U.SetText(r.label, e.label or "")
+      U.SetText(r.text, e.text or "")
       local onBar = e.value and e.color
       if onBar then
         local v = math.max(0.01, math.min(1, e.value))
@@ -719,9 +762,10 @@ function TM:Paint(now)
       -- colour on the dark panel for who holds a base
       local lc = (not onBar) and e.labelFac and TEXT[e.labelFac]
       if lc then r.label:SetTextColor(lc[1], lc[2], lc[3]) else r.label:SetTextColor(1, 1, 1) end
-      r.say = e.say
+      r.entry = e
       r:Show()
     else
+      r.entry = nil
       r:Hide()
     end
   end
